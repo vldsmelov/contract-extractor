@@ -1,9 +1,6 @@
-version: "3.8"
-
 services:
   ollama:
     image: ollama/ollama:latest
-    container_name: ollama
     restart: unless-stopped
     ports:
       - "11434:11434"
@@ -16,7 +13,6 @@ services:
     build:
       context: ./api
       dockerfile: dockerfile
-    container_name: contract-extractor-api
     depends_on:
       - ollama
     environment:
