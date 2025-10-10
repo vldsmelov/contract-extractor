@@ -1,0 +1,14 @@
+# Light application layer referencing the pre-built base image
+# IMPORTANT: build base first: 
+#   docker build -f api/dockerfile.base -t contract-extractor-api-base ./api
+FROM contract-extractor-api-base:latest
+
+WORKDIR /app
+
+# Copy only app code
+COPY app /app/app
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+EXPOSE 8080
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

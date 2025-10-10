@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    volumes:
+      - ollama_models:/root/.ollama
+
+  api:
+    build:
+      context: ./api
+      dockerfile: dockerfile
+    container_name: contract-extractor-api
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - MODEL=qwen2.5:7b-instruct
+      - TEMPERATURE=0.1
+      - MAX_TOKENS=1024
+      - NUMERIC_TOLERANCE=0.01
+      - USE_LLM=true
+    volumes:
+      - ./api/app:/app/app:ro
+    ports:
+      - "8080:8080"
+
+volumes:
+  ollama_models:
