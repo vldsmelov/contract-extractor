@@ -11,8 +11,14 @@
 
 1. Соберите базовый образ (тяжёлый слой):
 ```bash
-docker build -f api/dockerfile.base -t contract-extractor-api-base ./api
+ docker build -f api/dockerfile.base -t contract-extractor-api-base ./api
 ```
+
+   *По умолчанию образ собирается на основе `nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04`,
+   оптимизированного под архитектуру `sm_120` и нацелен на nightly-сборки PyTorch для CUDA 13.
+   При необходимости можно переопределить базовый образ, индекс колёс PyTorch и список
+   поддерживаемых архитектур аргументами сборки `--build-arg CUDA_BASE_IMAGE=...`,
+   `--build-arg TORCH_INDEX_URL=...` и `--build-arg TORCH_CUDA_ARCH=...`.*
 
 2. Соберите и поднимите сервисы:
 ```bash
