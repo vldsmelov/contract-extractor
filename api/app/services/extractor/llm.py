@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Any
 from .base import BaseExtractor
 from ..ollama_client import OllamaClient
-from ...core.config import CONFIG
+from app.core.config import CONFIG
 
 class LLMExtractor(BaseExtractor):
     def __init__(self, schema: Dict[str, Any], system_path: str, user_tmpl_path: str):

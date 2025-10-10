@@ -2,8 +2,8 @@ from typing import Dict, Any, List
 from .base import BaseExtractor
 from .rules import RuleBasedExtractor
 from .llm import LLMExtractor
-from ...core.validator import SchemaValidator
-from ...core.config import CONFIG
+from app.core.validator import SchemaValidator
+from app.core.config import CONFIG
 from ..warnings import WarningItem
 
 class ExtractionPipeline:
