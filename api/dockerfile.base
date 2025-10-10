@@ -1,16 +1,55 @@
-# Heavy/base layer
-FROM python:3.11-slim
+# Heavy/base layer with CUDA, PyTorch and Ollama
+FROM nvidia/cuda:12.4.1-cudnn-devel-ubuntu22.04
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    TORCH_CUDA_ARCH_LIST=12.0
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Install Python 3.11 and build tooling
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        gnupg \
+        software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        python3.11 \
+        python3.11-dev \
+        python3.11-distutils \
+        python3.11-venv \
+        pkg-config && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
+    ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/local/bin/python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PATH="/root/.local/bin:${PATH}" \
+    PYTHONPATH="/app"
+
+RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Install GPU-enabled PyTorch stack
+RUN python3.11 -m pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cu124 \
+        torch==2.4.0+cu124 \
+        torchvision==0.19.0+cu124 \
+        torchaudio==2.4.0+cu124
+
+# Install Ollama with CUDA support
+RUN curl -fsSL https://ollama.com/install.sh | OLLAMA_INSTALL_GPU=true sh && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+
 COPY requirements-base.txt /app/requirements-base.txt
-RUN pip install --no-cache-dir -r /app/requirements-base.txt
+RUN python3.11 -m pip install --no-cache-dir -r /app/requirements-base.txt
 
 # This image intentionally contains heavy deps only once.
