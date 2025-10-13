@@ -27,18 +27,29 @@ class LLMExtractor(BaseExtractor):
         else:
             self.field_guidelines = ""
         self.client = OllamaClient()
-        self.json_skeleton = json.dumps(
-            self._build_json_skeleton(), ensure_ascii=False, indent=2
-        )
         self.last_prompt: str = ""
 
-    async def extract(self, text: str, partial: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract(
+        self,
+        text: str,
+        partial: Dict[str, Any],
+        *,
+        schema_override: Dict[str, Any] | None = None,
+        field_guidelines: str | None = None,
+    ) -> Dict[str, Any]:
+        schema_to_use = schema_override or self.schema
+        guidelines_to_use = field_guidelines if field_guidelines is not None else self.field_guidelines
+        json_schema = json.dumps(schema_to_use, ensure_ascii=False, indent=2)
+        json_skeleton = json.dumps(
+            self._build_json_skeleton(schema_to_use), ensure_ascii=False, indent=2
+        )
+
         # Встраиваем схему внутрь промпта
         user_prompt = self.user_template.format(
             document_text=text[:100000],  # безопасный лимит
-            json_schema=json.dumps(self.schema, ensure_ascii=False, indent=2),
-            json_skeleton=self.json_skeleton,
-            field_guidelines=self.field_guidelines,
+            json_schema=json_schema,
+            json_skeleton=json_skeleton,
+            field_guidelines=guidelines_to_use,
         )
         self.last_prompt = user_prompt
         raw = await self.client.chat(
@@ -71,9 +82,10 @@ class LLMExtractor(BaseExtractor):
         merged.update(partial)  # приоритет у правил/локальной логики
         return merged
 
-    def _build_json_skeleton(self) -> Dict[str, Any]:
+    def _build_json_skeleton(self, schema: Dict[str, Any] | None = None) -> Dict[str, Any]:
+        schema = schema or self.schema
         skeleton: "OrderedDict[str, Any]" = OrderedDict()
-        properties: Dict[str, Any] = self.schema.get("properties", {})
+        properties: Dict[str, Any] = schema.get("properties", {})
         for key, meta in properties.items():
             type_ = meta.get("type")
             if type_ == "integer":
