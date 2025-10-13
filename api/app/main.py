@@ -40,7 +40,7 @@ async def status():
 
 @app.get("/config")
 async def get_config():
-    return CONFIG.dict()
+    return CONFIG.model_dump()
 
 @app.get("/schema")
 async def get_schema():
