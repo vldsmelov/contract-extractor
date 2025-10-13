@@ -3,9 +3,22 @@ from typing import Optional
 
 NBSP = '\u00A0'
 
+_SPECIAL_CHARS_RE = re.compile(r"[^\w\s\.,:;!?()/%«»\"'№\-–—]", re.UNICODE)
+
+
+def _strip_special_symbols(text: str) -> str:
+    """Remove characters that add noise to the document text."""
+    return _SPECIAL_CHARS_RE.sub(' ', text)
+
+
 def normalize_whitespace(text: str) -> str:
+    """Collapse whitespace and strip noisy symbols to keep text readable."""
+    if not text:
+        return ''
+
     text = text.replace(NBSP, ' ')
-    text = re.sub(r'[\t\r]+', ' ', text)
+    text = _strip_special_symbols(text)
+    text = re.sub(r'[\t\r\n]+', ' ', text)
     text = re.sub(r' +', ' ', text)
     return text.strip()
 

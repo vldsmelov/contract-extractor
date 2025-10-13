@@ -5,6 +5,7 @@ from typing import Dict, Any
 
 from .base import BaseExtractor
 from ..ollama_client import OllamaClient
+from ..normalize import normalize_whitespace
 from app.core.config import CONFIG
 
 
@@ -51,7 +52,7 @@ class LLMExtractor(BaseExtractor):
             json_skeleton=json_skeleton,
             field_guidelines=guidelines_to_use,
         )
-        self.last_prompt = user_prompt
+        self.last_prompt = normalize_whitespace(user_prompt)
         raw = await self.client.chat(
             self.system_prompt,
             user_prompt,
