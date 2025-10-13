@@ -21,8 +21,12 @@ class OllamaClient:
             "num_predict": max_tokens if max_tokens is not None else CONFIG.max_tokens,
         }
 
-        timeout = httpx.Timeout(connect=10.0, read=CONFIG.ollama_read_timeout)
-
+        timeout = httpx.Timeout(
+            timeout=CONFIG.ollama_read_timeout + 10.0,
+            connect=10.0,
+            read=CONFIG.ollama_read_timeout,
+        )
+        
         async with httpx.AsyncClient(base_url=self.base_url, timeout=timeout) as client:
             chat_payload = {
                 "model": self.model,
