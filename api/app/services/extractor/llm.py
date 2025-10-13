@@ -30,6 +30,7 @@ class LLMExtractor(BaseExtractor):
         self.json_skeleton = json.dumps(
             self._build_json_skeleton(), ensure_ascii=False, indent=2
         )
+        self.last_prompt: str = ""
 
     async def extract(self, text: str, partial: Dict[str, Any]) -> Dict[str, Any]:
         # Встраиваем схему внутрь промпта
@@ -39,6 +40,7 @@ class LLMExtractor(BaseExtractor):
             json_skeleton=self.json_skeleton,
             field_guidelines=self.field_guidelines,
         )
+        self.last_prompt = user_prompt
         raw = await self.client.chat(
             self.system_prompt,
             user_prompt,
@@ -81,3 +83,6 @@ class LLMExtractor(BaseExtractor):
             else:
                 skeleton[key] = ""
         return skeleton
+
+    def update_field_guidelines(self, guidelines: str | None) -> None:
+        self.field_guidelines = guidelines or ""

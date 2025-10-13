@@ -24,16 +24,8 @@ class FieldSettings:
         with self._extractors_path.open("r", encoding="utf-8") as fh:
             self._extractors: Dict[str, str] = json.load(fh)
 
-        self._general_guidelines = (
-            self._guidelines_path.read_text(encoding="utf-8")
-            if self._guidelines_path.exists()
-            else ""
-        )
-
-        self._field_prompts: Dict[str, str] = {}
-        if self._prompts_dir.exists():
-            for file in sorted(self._prompts_dir.glob("*.md")):
-                self._field_prompts[file.stem] = file.read_text(encoding="utf-8")
+        self._general_guidelines_cache: str | None = None
+        self._field_prompts_cache: Dict[str, str] | None = None
 
     @property
     def extractors(self) -> Dict[str, str]:
@@ -52,10 +44,18 @@ class FieldSettings:
         return (field for field, method in self._extractors.items() if method.lower() == "off")
 
     def build_guidelines_bundle(self) -> str:
-        sections = [self._general_guidelines.strip()] if self._general_guidelines else []
+        self.refresh_prompts()
+
+        general_guidelines = self._load_general_guidelines().strip()
+        if general_guidelines:
+            sections = [general_guidelines]
+        else:
+            sections = []
+
+        field_prompts = self._load_field_prompts()
 
         for field, method in self._extractors.items():
-            prompt = self._field_prompts.get(field, "")
+            prompt = field_prompts.get(field, "")
             header = f"## {field} (способ: {method})"
             if prompt:
                 body = prompt.strip()
@@ -64,6 +64,32 @@ class FieldSettings:
             sections.append(f"{header}\n\n{body}")
 
         return "\n\n".join(section for section in sections if section)
+
+    def _load_general_guidelines(self) -> str:
+        if self._general_guidelines_cache is not None:
+            return self._general_guidelines_cache
+        if self._guidelines_path.exists():
+            self._general_guidelines_cache = self._guidelines_path.read_text(encoding="utf-8")
+        else:
+            self._general_guidelines_cache = ""
+        return self._general_guidelines_cache
+
+    def _load_field_prompts(self) -> Dict[str, str]:
+        if self._field_prompts_cache is not None:
+            return self._field_prompts_cache
+
+        prompts: Dict[str, str] = {}
+        if self._prompts_dir.exists():
+            for file in sorted(self._prompts_dir.glob("*.md")):
+                prompts[file.stem] = file.read_text(encoding="utf-8")
+
+        self._field_prompts_cache = prompts
+        return prompts
+
+    def refresh_prompts(self) -> None:
+        """Сбрасывает кеш подсказок и перечитывает файлы."""
+        self._general_guidelines_cache = None
+        self._field_prompts_cache = None
 
     def apply_to_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """Возвращает копию схемы, очищенную от отключённых полей."""

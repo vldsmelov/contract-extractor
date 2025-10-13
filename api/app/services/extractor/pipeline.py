@@ -35,6 +35,7 @@ class ExtractionPipeline:
         List[WarningItem],
         List[Dict[str, Any]],
         Dict[str, Any],
+        str,
     ):
         warnings = []
 
@@ -42,8 +43,12 @@ class ExtractionPipeline:
         partial = await self.rules.extract(text, {})
 
         # 2) LLM (если включен)
+        prompt = ""
         if self.llm is not None:
+            guidelines_bundle = self.field_settings.build_guidelines_bundle()
+            self.llm.update_field_guidelines(guidelines_bundle)
             data = await self.llm.extract(text, partial)
+            prompt = self.llm.last_prompt
         else:
             data = partial
 
@@ -67,4 +72,4 @@ class ExtractionPipeline:
             "disabled_fields": ", ".join(sorted(self.field_settings.disabled_fields()))
         }
 
-        return filtered_data, warnings, errors, debug
+        return filtered_data, warnings, errors, debug, prompt

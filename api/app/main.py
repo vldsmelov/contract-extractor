@@ -88,32 +88,38 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
 
-    data, warns, errors, debug = await pipeline.run(text)
+    data, warns, errors, debug, ext_prompt = await pipeline.run(text)
 
     if errors:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "ok": False,
-                "data": data,
-                "warnings": to_payload(warns),
-                "validation_errors": errors,
-                "debug": debug,
-            },
-        )
+        content = {
+            "ext_prompt": ext_prompt or "",
+            "ok": False,
+            "data": data,
+            "warnings": to_payload(warns),
+            "validation_errors": errors,
+            "debug": debug,
+        }
+        return JSONResponse(status_code=422, content=content)
 
-    return {"ok": True, "data": data, "warnings": to_payload(warns), "debug": debug}
+    return {
+        "ext_prompt": ext_prompt or "",
+        "ok": True,
+        "data": data,
+        "warnings": to_payload(warns),
+        "debug": debug,
+    }
 
 @app.post("/test")
 async def test(text_file: UploadFile = File(...), gold_json: UploadFile = File(...)):
     text = await read_text_from_upload(text_file)
     gold = await read_json_from_upload(gold_json)
 
-    data, warns, errors, debug = await pipeline.run(text)
+    data, warns, errors, debug, ext_prompt = await pipeline.run(text)
 
     rows, summary = compare_dicts(gold, data)
 
     return {
+        "ext_prompt": ext_prompt or "",
         "ok": True,
         "table": rows,
         "summary": summary,
