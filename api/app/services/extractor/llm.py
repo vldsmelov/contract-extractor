@@ -15,11 +15,14 @@ class LLMExtractor(BaseExtractor):
         system_path: str,
         user_tmpl_path: str,
         field_guidelines_path: str | None = None,
+        field_guidelines: str | None = None,
     ):
         self.schema = schema
         self.system_prompt = Path(system_path).read_text(encoding="utf-8")
         self.user_template = Path(user_tmpl_path).read_text(encoding="utf-8")
-        if field_guidelines_path and Path(field_guidelines_path).exists():
+        if field_guidelines is not None:
+            self.field_guidelines = field_guidelines
+        elif field_guidelines_path and Path(field_guidelines_path).exists():
             self.field_guidelines = Path(field_guidelines_path).read_text(encoding="utf-8")
         else:
             self.field_guidelines = ""

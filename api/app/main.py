@@ -7,6 +7,7 @@ from pathlib import Path
 from .core.config import CONFIG
 from .core.schema import load_schema
 from .core.validator import SchemaValidator
+from .core.field_settings import FieldSettings
 from .services.extractor.pipeline import ExtractionPipeline
 from .services.warnings import to_payload
 from .services.compare import compare_dicts
@@ -18,13 +19,22 @@ SCHEMA_PATH = APP_DIR / "assets" / "schema.json"
 SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "system.txt"
 USER_TMPL_PATH = APP_DIR / "prompts" / "user_template.txt"
 FIELD_GUIDELINES_PATH = APP_DIR / "prompts" / "field_guidelines.md"
+FIELD_PROMPTS_DIR = APP_DIR / "prompts" / "fields"
+FIELD_EXTRACTORS_PATH = APP_DIR / "assets" / "field_extractors.json"
 
-schema = load_schema(str(SCHEMA_PATH))
+raw_schema = load_schema(str(SCHEMA_PATH))
+field_settings = FieldSettings(
+    str(FIELD_EXTRACTORS_PATH),
+    str(FIELD_GUIDELINES_PATH),
+    str(FIELD_PROMPTS_DIR),
+)
+schema = field_settings.apply_to_schema(raw_schema)
 validator = SchemaValidator(schema)
 pipeline = ExtractionPipeline(
-    schema,
+    raw_schema,
     str(SYSTEM_PROMPT_PATH),
     str(USER_TMPL_PATH),
+    field_settings,
     str(FIELD_GUIDELINES_PATH),
 )
 client = OllamaClient()
@@ -42,6 +52,7 @@ async def status():
         "use_llm": CONFIG.use_llm,
         "model": CONFIG.model_name,
         "ollama_host": CONFIG.ollama_host,
+        "supported_languages": CONFIG.supported_languages,
     }
 
 @app.get("/config")
@@ -77,7 +88,7 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
 
-    data, warns, errors = await pipeline.run(text)
+    data, warns, errors, debug = await pipeline.run(text)
 
     if errors:
         return JSONResponse(
@@ -87,17 +98,18 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
                 "data": data,
                 "warnings": to_payload(warns),
                 "validation_errors": errors,
+                "debug": debug,
             },
         )
 
-    return {"ok": True, "data": data, "warnings": to_payload(warns)}
+    return {"ok": True, "data": data, "warnings": to_payload(warns), "debug": debug}
 
 @app.post("/test")
 async def test(text_file: UploadFile = File(...), gold_json: UploadFile = File(...)):
     text = await read_text_from_upload(text_file)
     gold = await read_json_from_upload(gold_json)
 
-    data, warns, errors = await pipeline.run(text)
+    data, warns, errors, debug = await pipeline.run(text)
 
     rows, summary = compare_dicts(gold, data)
 
@@ -106,5 +118,6 @@ async def test(text_file: UploadFile = File(...), gold_json: UploadFile = File(.
         "table": rows,
         "summary": summary,
         "warnings": to_payload(warns),
-        **({"validation_errors": errors} if errors else {})
+        **({"validation_errors": errors} if errors else {}),
+        "debug": debug,
     }
