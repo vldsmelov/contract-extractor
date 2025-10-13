@@ -5,6 +5,7 @@ from app.core.validator import SchemaValidator
 from app.core.config import CONFIG
 from app.core.field_settings import FieldSettings
 from ..warnings import WarningItem
+from ..normalize import normalize_whitespace
 
 class ExtractionPipeline:
     def __init__(
@@ -37,8 +38,10 @@ class ExtractionPipeline:
     ):
         warnings = []
 
+        cleaned_text = normalize_whitespace(text)
+
         # 1) Правила
-        partial = await self.rules.extract(text, {})
+        partial = await self.rules.extract(cleaned_text, {})
 
         # 2) LLM (если включен)
         prompt = ""
@@ -51,7 +54,7 @@ class ExtractionPipeline:
                     self.schema, group.fields
                 )
                 guidelines = self.field_settings.build_guidelines_bundle(group.fields)
-                segment = group.document_slice.extract(text)
+                segment = group.document_slice.extract(cleaned_text)
                 aggregated = await self.llm.extract(
                     segment,
                     aggregated,
@@ -84,5 +87,7 @@ class ExtractionPipeline:
         debug = {
             "disabled_fields": ", ".join(sorted(self.field_settings.disabled_fields()))
         }
+
+        prompt = normalize_whitespace(prompt) if prompt else ""
 
         return filtered_data, warnings, errors, debug, prompt
