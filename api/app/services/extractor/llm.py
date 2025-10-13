@@ -15,11 +15,14 @@ class LLMExtractor(BaseExtractor):
         system_path: str,
         user_tmpl_path: str,
         field_guidelines_path: str | None = None,
+        field_guidelines: str | None = None,
     ):
         self.schema = schema
         self.system_prompt = Path(system_path).read_text(encoding="utf-8")
         self.user_template = Path(user_tmpl_path).read_text(encoding="utf-8")
-        if field_guidelines_path and Path(field_guidelines_path).exists():
+        if field_guidelines is not None:
+            self.field_guidelines = field_guidelines
+        elif field_guidelines_path and Path(field_guidelines_path).exists():
             self.field_guidelines = Path(field_guidelines_path).read_text(encoding="utf-8")
         else:
             self.field_guidelines = ""
@@ -27,6 +30,7 @@ class LLMExtractor(BaseExtractor):
         self.json_skeleton = json.dumps(
             self._build_json_skeleton(), ensure_ascii=False, indent=2
         )
+        self.last_prompt: str = ""
 
     async def extract(self, text: str, partial: Dict[str, Any]) -> Dict[str, Any]:
         # Встраиваем схему внутрь промпта
@@ -36,6 +40,7 @@ class LLMExtractor(BaseExtractor):
             json_skeleton=self.json_skeleton,
             field_guidelines=self.field_guidelines,
         )
+        self.last_prompt = user_prompt
         raw = await self.client.chat(
             self.system_prompt,
             user_prompt,
@@ -78,3 +83,6 @@ class LLMExtractor(BaseExtractor):
             else:
                 skeleton[key] = ""
         return skeleton
+
+    def update_field_guidelines(self, guidelines: str | None) -> None:
+        self.field_guidelines = guidelines or ""
