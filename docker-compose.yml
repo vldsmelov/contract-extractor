@@ -7,6 +7,7 @@ services:
         CUDA_BASE_IMAGE: ${CUDA_BASE_IMAGE:-nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04}
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/nightly/cu130}
         TORCH_CUDA_ARCH: ${TORCH_CUDA_ARCH:-12.0}
+        RUNTIME_BASE: ${RUNTIME_BASE_IMAGE:-python-base}
     environment:
       OLLAMA_HOST: ${OLLAMA_HOST:-http://127.0.0.1:11434}
       MODEL: ${MODEL:-qwen2.5:7b-instruct}

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG CUDA_BASE_IMAGE=nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04
-FROM ${CUDA_BASE_IMAGE} AS base
+FROM ${CUDA_BASE_IMAGE} AS system-deps
 
 ARG TORCH_CUDA_ARCH="12.0"
 ARG TORCH_INDEX_URL="https://download.pytorch.org/whl/nightly/cu130"
@@ -57,8 +57,13 @@ RUN curl -fsSL https://ollama.com/install.sh | OLLAMA_INSTALL_GPU=true sh && \
 
 WORKDIR /opt/app
 
+FROM system-deps AS python-base
+
 COPY api/requirements-base.txt /tmp/requirements-base.txt
 RUN python3.11 -m pip install --no-cache-dir -r /tmp/requirements-base.txt
+
+ARG RUNTIME_BASE=python-base
+FROM ${RUNTIME_BASE} AS runtime
 
 COPY api/requirements.txt /tmp/requirements.txt
 RUN python3.11 -m pip install --no-cache-dir -r /tmp/requirements.txt

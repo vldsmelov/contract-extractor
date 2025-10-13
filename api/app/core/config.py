@@ -1,8 +1,8 @@
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel, ConfigDict
 import os
 
 class AppConfig(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
     app_name: str = "contract-extractor-api"
     version: str = "0.1.0"
     env: str = os.getenv("ENV", "dev")
