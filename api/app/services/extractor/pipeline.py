@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .base import BaseExtractor
 from .rules import RuleBasedExtractor
 from .llm import LLMExtractor
@@ -7,11 +7,21 @@ from app.core.config import CONFIG
 from ..warnings import WarningItem
 
 class ExtractionPipeline:
-    def __init__(self, schema: Dict[str, Any], system_prompt_path: str, user_tmpl_path: str):
+    def __init__(
+        self,
+        schema: Dict[str, Any],
+        system_prompt_path: str,
+        user_tmpl_path: str,
+        field_guidelines_path: Optional[str] = None,
+    ):
         self.schema = schema
         self.validator = SchemaValidator(schema)
         self.rules = RuleBasedExtractor()
-        self.llm = LLMExtractor(schema, system_prompt_path, user_tmpl_path) if CONFIG.use_llm else None
+        self.llm = (
+            LLMExtractor(schema, system_prompt_path, user_tmpl_path, field_guidelines_path)
+            if CONFIG.use_llm
+            else None
+        )
 
     async def run(self, text: str) -> (Dict[str, Any], List[WarningItem], List[Dict[str, Any]]):
         warnings = []

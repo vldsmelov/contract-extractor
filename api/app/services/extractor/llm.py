@@ -1,24 +1,47 @@
 import json
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Any
+
 from .base import BaseExtractor
 from ..ollama_client import OllamaClient
 from app.core.config import CONFIG
 
+
 class LLMExtractor(BaseExtractor):
-    def __init__(self, schema: Dict[str, Any], system_path: str, user_tmpl_path: str):
+    def __init__(
+        self,
+        schema: Dict[str, Any],
+        system_path: str,
+        user_tmpl_path: str,
+        field_guidelines_path: str | None = None,
+    ):
         self.schema = schema
         self.system_prompt = Path(system_path).read_text(encoding="utf-8")
         self.user_template = Path(user_tmpl_path).read_text(encoding="utf-8")
+        if field_guidelines_path and Path(field_guidelines_path).exists():
+            self.field_guidelines = Path(field_guidelines_path).read_text(encoding="utf-8")
+        else:
+            self.field_guidelines = ""
         self.client = OllamaClient()
+        self.json_skeleton = json.dumps(
+            self._build_json_skeleton(), ensure_ascii=False, indent=2
+        )
 
     async def extract(self, text: str, partial: Dict[str, Any]) -> Dict[str, Any]:
         # Встраиваем схему внутрь промпта
         user_prompt = self.user_template.format(
             document_text=text[:100000],  # безопасный лимит
-            json_schema=json.dumps(self.schema, ensure_ascii=False, indent=2)
+            json_schema=json.dumps(self.schema, ensure_ascii=False, indent=2),
+            json_skeleton=self.json_skeleton,
+            field_guidelines=self.field_guidelines,
         )
-        raw = await self.client.chat(self.system_prompt, user_prompt, temperature=CONFIG.temperature, max_tokens=CONFIG.max_tokens)
+        raw = await self.client.chat(
+            self.system_prompt,
+            user_prompt,
+            temperature=CONFIG.temperature,
+            max_tokens=CONFIG.max_tokens,
+        )
 
         # Попытка распарсить JSON напрямую
         data = None
@@ -27,6 +50,7 @@ class LLMExtractor(BaseExtractor):
         except json.JSONDecodeError:
             # Попробуем выделить JSON по границам
             import re
+
             m = re.search(r"\{[\s\S]*\}", raw)
             if m:
                 try:
@@ -41,3 +65,16 @@ class LLMExtractor(BaseExtractor):
         merged = dict(data)
         merged.update(partial)  # приоритет у правил/локальной логики
         return merged
+
+    def _build_json_skeleton(self) -> Dict[str, Any]:
+        skeleton: "OrderedDict[str, Any]" = OrderedDict()
+        properties: Dict[str, Any] = self.schema.get("properties", {})
+        for key, meta in properties.items():
+            type_ = meta.get("type")
+            if type_ == "integer":
+                skeleton[key] = 0
+            elif type_ == "number":
+                skeleton[key] = 0.0
+            else:
+                skeleton[key] = ""
+        return skeleton
