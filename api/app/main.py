@@ -17,10 +17,16 @@ APP_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = APP_DIR / "assets" / "schema.json"
 SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "system.txt"
 USER_TMPL_PATH = APP_DIR / "prompts" / "user_template.txt"
+FIELD_GUIDELINES_PATH = APP_DIR / "prompts" / "field_guidelines.md"
 
 schema = load_schema(str(SCHEMA_PATH))
 validator = SchemaValidator(schema)
-pipeline = ExtractionPipeline(schema, str(SYSTEM_PROMPT_PATH), str(USER_TMPL_PATH))
+pipeline = ExtractionPipeline(
+    schema,
+    str(SYSTEM_PROMPT_PATH),
+    str(USER_TMPL_PATH),
+    str(FIELD_GUIDELINES_PATH),
+)
 client = OllamaClient()
 
 app = FastAPI(title="Contract Extractor API", version=CONFIG.version)
