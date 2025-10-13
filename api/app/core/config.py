@@ -12,5 +12,6 @@ class AppConfig(BaseModel):
     max_tokens: int = int(os.getenv("MAX_TOKENS", "1024"))
     numeric_tolerance: float = float(os.getenv("NUMERIC_TOLERANCE", "0.01"))
     use_llm: bool = os.getenv("USE_LLM", "true").lower() == "true"
+    ollama_read_timeout: float = float(os.getenv("OLLAMA_READ_TIMEOUT", "300"))
 
 CONFIG = AppConfig()
