@@ -1,9 +1,9 @@
 from typing import Dict, Any, List, Optional
-from .base import BaseExtractor
 from .rules import RuleBasedExtractor
 from .llm import LLMExtractor
 from app.core.validator import SchemaValidator
 from app.core.config import CONFIG
+from app.core.field_settings import FieldSettings
 from ..warnings import WarningItem
 
 class ExtractionPipeline:
@@ -12,18 +12,30 @@ class ExtractionPipeline:
         schema: Dict[str, Any],
         system_prompt_path: str,
         user_tmpl_path: str,
+        field_settings: FieldSettings,
         field_guidelines_path: Optional[str] = None,
     ):
-        self.schema = schema
-        self.validator = SchemaValidator(schema)
+        self.field_settings = field_settings
+        self.schema = self.field_settings.apply_to_schema(schema)
+        self.validator = SchemaValidator(self.schema)
         self.rules = RuleBasedExtractor()
-        self.llm = (
-            LLMExtractor(schema, system_prompt_path, user_tmpl_path, field_guidelines_path)
-            if CONFIG.use_llm
-            else None
-        )
+        guidelines_bundle = self.field_settings.build_guidelines_bundle()
+        self.llm = None
+        if CONFIG.use_llm:
+            self.llm = LLMExtractor(
+                self.schema,
+                system_prompt_path,
+                user_tmpl_path,
+                field_guidelines_path,
+                guidelines_bundle,
+            )
 
-    async def run(self, text: str) -> (Dict[str, Any], List[WarningItem], List[Dict[str, Any]]):
+    async def run(self, text: str) -> (
+        Dict[str, Any],
+        List[WarningItem],
+        List[Dict[str, Any]],
+        Dict[str, Any],
+    ):
         warnings = []
 
         # 1) Правила
@@ -36,7 +48,8 @@ class ExtractionPipeline:
             data = partial
 
         # 3) Валидация
-        errors = self.validator.validate(data)
+        filtered_data = self.field_settings.filter_payload(data)
+        errors = self.validator.validate(filtered_data)
 
         # 4) Дополнительные предупреждения (пример: расхождение НДС)
         try:
@@ -50,4 +63,8 @@ class ExtractionPipeline:
         except Exception:
             pass
 
-        return data, warnings, errors
+        debug = {
+            "disabled_fields": ", ".join(sorted(self.field_settings.disabled_fields()))
+        }
+
+        return filtered_data, warnings, errors, debug
