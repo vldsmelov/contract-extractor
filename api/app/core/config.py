@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 import os
+from typing import List
 
 class AppConfig(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
@@ -13,5 +14,6 @@ class AppConfig(BaseModel):
     numeric_tolerance: float = float(os.getenv("NUMERIC_TOLERANCE", "0.01"))
     use_llm: bool = os.getenv("USE_LLM", "true").lower() == "true"
     ollama_read_timeout: float = float(os.getenv("OLLAMA_READ_TIMEOUT", "300"))
+    supported_languages: List[str] = [lang.strip() for lang in os.getenv("SUPPORTED_LANGUAGES", "ru,en").split(",") if lang.strip()]
 
 CONFIG = AppConfig()
