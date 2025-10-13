@@ -1,121 +1,75 @@
 # Contract Extractor API
 
-Локальный сервис извлечения JSON из текста договора (без табличной части).
-Спроектировано по принципам **OOP, DRY, KISS**. Настройки, промпты и схема — в отдельных файлах.
+Локальный сервис извлечения JSON из текста договора (без табличной части). Сервис использует FastAPI, валидирует ответы по JSON Schema и при необходимости обращается к Ollama для LLM-поддержки.
 
-## Архитектура
-- `ollama` — локальная LLM (по умолчанию `qwen2.5:7b-instruct`).
-- `api` — FastAPI-сервис с эндпоинтами `/check`, `/test`, `/healthz`, `/status`, `/config`, `/schema`, `/models`, `/version`.
+## Контейнеры и образа
+- **`ollama`** — официальный образ `ollama/ollama` с GPU-поддержкой. Отвечает за запуск локальной LLM и хранение скачанных моделей в отдельном Docker-томе.
+- **`ollama-pull`** — вспомогательный контейнер на базе `curlimages/curl`, который дожидается старта Ollama и инициирует загрузку выбранной модели.
+- **`api`** — образ FastAPI-сервиса. Собирается в два этапа:
+  1. `api/dockerfile.base` формирует тяжёлый базовый слой на основе `python:3.11-slim` и устанавливает фреймворк, валидацию и вспомогательные утилиты.
+  2. `api/dockerfile` добавляет лёгкие зависимости и исходный код приложения.
+
+Такое разделение позволяет кэшировать тяжёлые зависимости и пересобирать только верхний слой при изменениях кода.
+
+## Зависимости
+- `api/requirements-base.txt` — базовые и относительно «тяжёлые» пакеты (FastAPI, Uvicorn, Pydantic, JSON Schema, поддержка multipart). Их стоит менять редко.
+- `api/requirements.txt` — лёгкие или часто меняющиеся зависимости приложения (в данный момент — `httpx` для общения с Ollama).
+
+Если библиотека не используется в проекте, добавлять её не нужно — лишние пакеты только увеличивают образ.
 
 ## Сборка и запуск
-
-1. (Опционально, но ускоряет дальнейшую сборку) один раз создайте тяжёлый базовый образ, куда входят CUDA, PyTorch, Ollama и все «большие» зависимости API:
-```bash
-docker build \
-  --target python-base \
-  --build-arg CUDA_BASE_IMAGE=nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04 \
-  --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/nightly/cu130 \
-  --build-arg TORCH_CUDA_ARCH=12.0 \
-  -t contract-extractor-base:latest .
-```
-
-   После этого можно указать `RUNTIME_BASE_IMAGE=contract-extractor-base:latest`, чтобы итоговая сборка переиспользовала готовый слой и при изменениях `requirements.txt` пересобирала только лёгкие части.
-
-2. Соберите и поднимите сервис (API + Ollama в одном контейнере с поддержкой GPU):
-```bash
-RUNTIME_BASE_IMAGE=contract-extractor-base:latest docker compose up --build
-```
-
-   *Если переменная `RUNTIME_BASE_IMAGE` не задана, Docker соберёт полноценный образ с нуля, опираясь на `nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04`. При необходимости можно переопределить базовый CUDA-образ, индекс колёс PyTorch и список поддерживаемых архитектур аргументами `CUDA_BASE_IMAGE`, `TORCH_INDEX_URL` и `TORCH_CUDA_ARCH` в `docker-compose.yml`.*
-
-3. Загрузите модель в Ollama (если не загружена):
-```bash
-ollama pull qwen2.5:7b-instruct
-```
-
-API будет доступен на `http://localhost:8080`.
-
-## Эндпоинты
-
-- `GET /healthz` — проверка живости.
-- `GET /status` — базовая информация (модель, хост).
-- `GET /config` — активные настройки.
-- `GET /schema` — JSON Schema целевого ответа.
-- `GET /models` — список моделей в Ollama.
-- `GET /version` — версия приложения.
-
-- `POST /check` — извлечь JSON.
-  - **multipart/form-data**: `file=<.txt>`
-  - **application/json**: `{ "text": "..." }`
-
-- `POST /test` — сравнить с эталоном.
-  - **multipart/form-data**: `text_file=<.txt>, gold_json=<.json>`
-
-## Примечания
-- Строгая валидация по `assets/schema.json`. Схема сгенерирована из вашего эталонного JSON.
-- Гибридный пайплайн: правила → (опционально) LLM → валидация → предупреждения.
-- Числовая толерантность сравнения в `/test` — `NUMERIC_TOLERANCE` (env).
-- Дополнительные лёгкие зависимости следует добавлять в `api/requirements.txt`. Благодаря разнесению слоёв, изменение этого файла приводит только к быстрому пересбору верхнего слоя.
-
-## Добавление новых зависимостей
-
-1. **Выберите слой:**
-   - Лёгкие утилиты (pandas, rapidfuzz, httpx и т. п.) добавляйте в `api/requirements.txt`.
-   - Тяжёлые GPU-библиотеки (CUDA, PyTorch, TensorRT и т. п.) добавляйте в `api/requirements-base.txt`, чтобы они попадали в базовый образ и переиспользовались между сборками.
-
-2. **Обновите файлы зависимостей:**
+1. **(Опционально) Соберите базовый образ**. Делается редко — только при обновлении системных или тяжёлых Python-зависимостей.
    ```bash
-   # пример добавления новой библиотеки в верхний слой
-   echo "pydantic-settings==2.4.0" >> api/requirements.txt
+   docker build -f api/dockerfile.base -t contract-extractor/api-base:cu130 ./api
    ```
 
-3. **Пересоберите только лёгкий слой (быстро):**
+2. **Запустите сервисы через Docker Compose**. Укажите уже собранный базовый образ через переменную `API_BASE_IMAGE`, чтобы переиспользовать кэш.
    ```bash
-   RUNTIME_BASE_IMAGE=contract-extractor-base:latest docker compose build contract-extractor
+   API_BASE_IMAGE=contract-extractor/api-base:cu130 \
+   MODEL=qwen2.5:7b-instruct \
+   docker compose up --build
    ```
-   Docker скачает только новые пакеты из `api/requirements.txt`, поскольку тяжёлый слой уже собран.
+   После старта API будет доступно на `http://localhost:8080`, а Ollama — на `http://localhost:11434`.
 
-4. **Если меняли `requirements-base.txt`:**
-   ```bash
-   docker build \
-     --target python-base \
-     --build-arg CUDA_BASE_IMAGE=${CUDA_BASE_IMAGE:-nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04} \
-     --build-arg TORCH_INDEX_URL=${TORCH_INDEX_URL:-https://download.pytorch.org/whl/nightly/cu130} \
-     --build-arg TORCH_CUDA_ARCH=${TORCH_CUDA_ARCH:-12.0} \
-     -t contract-extractor-base:latest .
-   ```
-   Затем повторно выполните шаг 3, чтобы обновить основной образ приложения.
-
-5. **Запустите сервис после пересборки:**
-   ```bash
-   docker compose up -d contract-extractor
-   ```
-   Или `docker compose up --build`, если хотите собрать и запустить одной командой.
+3. **Изменение модели**. Передайте другое имя модели через `MODEL=...` (например, `MODEL=llama3.1`). Контейнер `ollama-pull` автоматически скачает её при запуске.
 
 ## Чистый старт Docker-среды
-Чтобы пересобрать всё с нуля (например, при смене базового CUDA-образа), выполните:
-
+Если нужно пересобрать всё с нуля или избавиться от возможных конфликтов кэша/контейнеров:
 ```bash
-# Остановить и удалить сервисы вместе с томами Ollama
-docker compose down --volumes --remove-orphans
+# Остановить и удалить сервисы вместе с томами моделей
+API_BASE_IMAGE=contract-extractor/api-base:cu130 docker compose down --volumes --remove-orphans
 
-# Очистить кэш сборки и удалить связанные образы
+# Очистить кеш сборки Docker
 docker builder prune --all --force
-docker image rm contract-extractor:latest contract-extractor-base:latest || true
+
+# Удалить собранные образы (если они есть)
+docker image rm contract-extractor/api:dev contract-extractor/api-base:cu130 || true
 
 # Удалить сохранённые модели Ollama
-docker volume rm contract-extractor_ollama_models || true
+docker volume rm contract_extractor_ollama_models || true
 ```
+После этого повторите шаги из раздела «Сборка и запуск».
 
-После очистки повторите сборку базового слоя (при необходимости) и основной службы по инструкциям выше.
+## Добавление зависимостей
+1. Определите слой:
+   - Фреймворк и тяжёлые пакеты — в `api/requirements-base.txt` (потребуется пересборка базового образа).
+   - Прикладные или часто меняющиеся утилиты — в `api/requirements.txt`.
+2. Пересоберите нужный слой:
+   - Только верхний: `API_BASE_IMAGE=contract-extractor/api-base:cu130 docker compose build api`
+   - С обновлением базового слоя: `docker build -f api/dockerfile.base -t contract-extractor/api-base:cu130 ./api`
+3. Перезапустите сервис: `docker compose up -d api`
 
-## Конфигурация
-См. переменные окружения в `docker-compose.yml` или используйте:
-- `OLLAMA_HOST` — адрес Ollama, по умолчанию `http://127.0.0.1:11434` внутри контейнера.
-- `MODEL` — имя модели Ollama (например, `qwen2.5:7b-instruct`).
-- `TEMPERATURE`, `MAX_TOKENS`, `USE_LLM` — параметры генерации.
+## Эндпоинты API
+- `GET /healthz` — проверка живости.
+- `GET /status` — информация о текущей модели и режиме работы.
+- `GET /config` — активная конфигурация.
+- `GET /schema` — JSON Schema результата.
+- `GET /models` — список моделей Ollama.
+- `GET /version` — версия приложения.
+- `POST /check` — извлечение данных (принимает текст в `multipart/form-data` или JSON).
+- `POST /test` — сравнение результата с эталоном.
 
-## Структура
+## Структура проекта
 ```
 api/
   app/
@@ -143,13 +97,11 @@ api/
   requirements-base.txt
   requirements.txt
 Dockerfile
-docker/
-  entrypoint.sh
 docker-compose.yml
 ```
 
-## Развитие
+## План развития
 - Расширить регексы и нормализацию по всем полям схемы.
-- Добавить подбор few-shot из ваших 32 примеров.
-- Усилить кросс-проверки (даты, суммы, статусы).
-- Логи/метрики/трассировка.
+- Добавить few-shot примеры из корпуса эталонов.
+- Внедрить дополнительные проверки (даты, суммы, статусы).
+- Подключить логи, метрики и трассировку.
