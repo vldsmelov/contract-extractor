@@ -21,7 +21,9 @@ class OllamaClient:
             "num_predict": max_tokens if max_tokens is not None else CONFIG.max_tokens,
         }
 
-        async with httpx.AsyncClient(base_url=self.base_url, timeout=120.0) as client:
+        timeout = httpx.Timeout(connect=10.0, read=CONFIG.ollama_read_timeout)
+
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=timeout) as client:
             chat_payload = {
                 "model": self.model,
                 "messages": [
@@ -37,6 +39,11 @@ class OllamaClient:
                 response.raise_for_status()
                 data = response.json()
                 return data.get("message", {}).get("content", "")
+            except httpx.ReadTimeout as exc:
+                raise RuntimeError(
+                    "Timed out waiting for a response from the Ollama service. "
+                    "Consider increasing OLLAMA_READ_TIMEOUT or checking the model performance."
+                ) from exc
             except HTTPStatusError as exc:
                 if exc.response.status_code != 404:
                     raise
