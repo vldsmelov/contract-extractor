@@ -21,12 +21,14 @@ USER_TMPL_PATH = APP_DIR / "prompts" / "user_template.txt"
 FIELD_GUIDELINES_PATH = APP_DIR / "prompts" / "field_guidelines.md"
 FIELD_PROMPTS_DIR = APP_DIR / "prompts" / "fields"
 FIELD_EXTRACTORS_PATH = APP_DIR / "assets" / "field_extractors.json"
+FIELD_CONTEXTS_PATH = APP_DIR / "assets" / "field_contexts.json"
 
 raw_schema = load_schema(str(SCHEMA_PATH))
 field_settings = FieldSettings(
     str(FIELD_EXTRACTORS_PATH),
     str(FIELD_GUIDELINES_PATH),
     str(FIELD_PROMPTS_DIR),
+    str(FIELD_CONTEXTS_PATH),
 )
 schema = field_settings.apply_to_schema(raw_schema)
 validator = SchemaValidator(schema)

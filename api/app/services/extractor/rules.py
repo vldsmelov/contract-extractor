@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from .base import BaseExtractor
 from ..normalize import normalize_whitespace, extract_number
 
@@ -11,7 +11,9 @@ class RuleBasedExtractor(BaseExtractor):
     ORG_PAT = re.compile(r'(?:(?:АО|ООО|ПАО|ЗАО)\s*\"[^\"]+\"|(?:(?:АО|ООО|ПАО|ЗАО)\s+[\w\s\"«».-]{3,}))')
     DATE_PAT = re.compile(r'(\d{2})[.](\d{2})[.](\d{4})')
 
-    async def extract(self, text: str, partial: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract(
+        self, text: str, partial: Dict[str, Any], **kwargs: Any
+    ) -> Dict[str, Any]:
         text_norm = normalize_whitespace(text)
 
         result = dict(partial)

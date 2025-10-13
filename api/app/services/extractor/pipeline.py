@@ -19,7 +19,6 @@ class ExtractionPipeline:
         self.schema = self.field_settings.apply_to_schema(schema)
         self.validator = SchemaValidator(self.schema)
         self.rules = RuleBasedExtractor()
-        guidelines_bundle = self.field_settings.build_guidelines_bundle()
         self.llm = None
         if CONFIG.use_llm:
             self.llm = LLMExtractor(
@@ -27,7 +26,6 @@ class ExtractionPipeline:
                 system_prompt_path,
                 user_tmpl_path,
                 field_guidelines_path,
-                guidelines_bundle,
             )
 
     async def run(self, text: str) -> (
@@ -45,10 +43,25 @@ class ExtractionPipeline:
         # 2) LLM (если включен)
         prompt = ""
         if self.llm is not None:
-            guidelines_bundle = self.field_settings.build_guidelines_bundle()
-            self.llm.update_field_guidelines(guidelines_bundle)
-            data = await self.llm.extract(text, partial)
-            prompt = self.llm.last_prompt
+            self.field_settings.refresh_prompts()
+            aggregated = dict(partial)
+            prompts: List[str] = []
+            for group in self.field_settings.build_llm_groups():
+                schema_subset = self.field_settings.build_schema_subset(
+                    self.schema, group.fields
+                )
+                guidelines = self.field_settings.build_guidelines_bundle(group.fields)
+                segment = group.document_slice.extract(text)
+                aggregated = await self.llm.extract(
+                    segment,
+                    aggregated,
+                    schema_override=schema_subset,
+                    field_guidelines=guidelines,
+                )
+                if self.llm.last_prompt:
+                    prompts.append(self.llm.last_prompt)
+            data = aggregated
+            prompt = "\n\n-----\n\n".join(prompts)
         else:
             data = partial
 
