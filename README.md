@@ -9,28 +9,23 @@
 
 ## Сборка и запуск
 
-1. Соберите базовый образ (тяжёлый слой):
+1. Соберите и поднимите сервис (API + Ollama в одном контейнере с поддержкой GPU):
 ```bash
- docker build -f api/dockerfile.base -t contract-extractor-api-base ./api
+docker compose up --build
 ```
 
    *По умолчанию образ собирается на основе `nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04`,
    оптимизированного под архитектуру `sm_120` и нацелен на nightly-сборки PyTorch для CUDA 13.
    При необходимости можно переопределить базовый образ, индекс колёс PyTorch и список
-   поддерживаемых архитектур аргументами сборки `--build-arg CUDA_BASE_IMAGE=...`,
-   `--build-arg TORCH_INDEX_URL=...` и `--build-arg TORCH_CUDA_ARCH=...`.*
+   поддерживаемых архитектур аргументами `CUDA_BASE_IMAGE`, `TORCH_INDEX_URL` и
+   `TORCH_CUDA_ARCH` в `docker-compose.yml`.*
 
-2. Соберите и поднимите сервисы:
-```bash
-docker compose up --build
-```
-
-3. Загрузите модель в Ollama (если не загружена):
+2. Загрузите модель в Ollama (если не загружена):
 ```bash
 ollama pull qwen2.5:7b-instruct
 ```
 
-API будет доступен на `http://localhost:8080`.
+API будет доступен на `http://localhost:8000`.
 
 ## Эндпоинты
 
@@ -55,7 +50,7 @@ API будет доступен на `http://localhost:8080`.
 
 ## Конфигурация
 См. переменные окружения в `docker-compose.yml` или используйте:
-- `OLLAMA_HOST` — адрес Ollama, по умолчанию `http://ollama:11434`.
+- `OLLAMA_HOST` — адрес Ollama, по умолчанию `http://127.0.0.1:11434` внутри контейнера.
 - `MODEL` — имя модели Ollama (например, `qwen2.5:7b-instruct`).
 - `TEMPERATURE`, `MAX_TOKENS`, `USE_LLM` — параметры генерации.
 

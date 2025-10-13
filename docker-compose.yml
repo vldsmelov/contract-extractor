@@ -1,31 +1,33 @@
 services:
-  ollama:
-    image: ollama/ollama:latest
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
+  contract-extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CUDA_BASE_IMAGE: ${CUDA_BASE_IMAGE:-nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/nightly/cu130}
+        TORCH_CUDA_ARCH: ${TORCH_CUDA_ARCH:-12.0}
     environment:
-      - OLLAMA_KEEP_ALIVE=24h
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://127.0.0.1:11434}
+      MODEL: ${MODEL:-qwen2.5:7b-instruct}
+      TEMPERATURE: ${TEMPERATURE:-0.1}
+      MAX_TOKENS: ${MAX_TOKENS:-1024}
+      NUMERIC_TOLERANCE: ${NUMERIC_TOLERANCE:-0.01}
+      USE_LLM: ${USE_LLM:-true}
+      API_PORT: ${API_PORT:-8000}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    ports:
+      - "8000:8000"
+      - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-
-  api:
-    build:
-      context: ./api
-      dockerfile: dockerfile
-    depends_on:
-      - ollama
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-      - MODEL=qwen2.5:7b-instruct
-      - TEMPERATURE=0.1
-      - MAX_TOKENS=1024
-      - NUMERIC_TOLERANCE=0.01
-      - USE_LLM=true
-    volumes:
-      - ./api/app:/app/app:ro
-    ports:
-      - "8080:8080"
 
 volumes:
   ollama_models:
