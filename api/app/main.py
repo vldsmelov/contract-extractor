@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from typing import Optional, Dict, Any
 import json
 from pathlib import Path
+import logging
 
 from .core.config import CONFIG
 from .core.schema import load_schema
@@ -42,6 +43,28 @@ pipeline = ExtractionPipeline(
 client = OllamaClient()
 
 app = FastAPI(title="Contract Extractor API", version=CONFIG.version)
+
+
+async def _process_text_payload(text: str):
+    try:
+        data, warns, errors, debug, ext_prompt = await pipeline.run(text)
+    except Exception as exc:  # pragma: no cover - defensive safeguard
+        logging.exception("Unhandled error during text processing")
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+
+    response_content = {
+        "ext_prompt": ext_prompt or "",
+        "data": data,
+        "warnings": to_payload(warns),
+        "debug": debug,
+    }
+
+    if errors:
+        response_content.update({"ok": False, "validation_errors": errors})
+        return JSONResponse(status_code=422, content=response_content)
+
+    response_content.update({"ok": True})
+    return response_content
 
 @app.get("/healthz")
 async def healthz():
@@ -90,46 +113,15 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
 
-    data, warns, errors, debug, ext_prompt = await pipeline.run(text)
+    return await _process_text_payload(text)
 
-    if errors:
-        content = {
-            "ext_prompt": ext_prompt or "",
-            "ok": False,
-            "data": data,
-            "warnings": to_payload(warns),
-            "validation_errors": errors,
-            "debug": debug,
-        }
-        return JSONResponse(status_code=422, content=content)
 
-    return {
-        "ext_prompt": ext_prompt or "",
-        "ok": True,
-        "data": data,
-        "warnings": to_payload(warns),
-        "debug": debug,
-    }
-
-@app.post("/txtcheck")
+@app.post("/txtchech")
 async def txtchech(text: str = Body(..., media_type="text/plain")):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
 
-    data, warns, errors = await pipeline.run(text)
-
-    if errors:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "ok": False,
-                "data": data,
-                "warnings": to_payload(warns),
-                "validation_errors": errors,
-            },
-        )
-
-    return {"ok": True, "data": data, "warnings": to_payload(warns)}
+    return await _process_text_payload(text)
 
 @app.post("/rawcheck")
 async def rawcheck(
