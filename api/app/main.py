@@ -111,6 +111,25 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
         "debug": debug,
     }
 
+@app.post("/txtcheck")
+async def txtchech(text: str = Body(..., media_type="text/plain")):
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    data, warns, errors = await pipeline.run(text)
+
+    if errors:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "ok": False,
+                "data": data,
+                "warnings": to_payload(warns),
+                "validation_errors": errors,
+            },
+        )
+
+    return {"ok": True, "data": data, "warnings": to_payload(warns)}
 
 @app.post("/rawcheck")
 async def rawcheck(
