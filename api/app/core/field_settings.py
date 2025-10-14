@@ -98,6 +98,7 @@ class FieldSettings:
         self._general_guidelines_cache: str | None = None
         self._field_prompts_cache: Dict[str, str] | None = None
         self._context_rules: Dict[str, DocumentSlice] = {}
+        self._context_groups: list[LLMFieldGroup] = []
         self._load_context_rules()
 
     @property
@@ -199,6 +200,35 @@ class FieldSettings:
         )
 
     def build_llm_groups(self) -> Sequence[LLMFieldGroup]:
+        if self._context_groups:
+            collected: list[LLMFieldGroup] = []
+            assigned: set[str] = set()
+            for group in self._context_groups:
+                fields = tuple(
+                    field
+                    for field in group.fields
+                    if self.is_enabled(field)
+                    and self.get_method(field).lower() == "llm"
+                )
+                if not fields:
+                    continue
+                collected.append(
+                    LLMFieldGroup(fields=fields, document_slice=group.document_slice)
+                )
+                assigned.update(fields)
+
+            for field in self._extractors.keys():
+                if field in assigned:
+                    continue
+                if not self.is_enabled(field):
+                    continue
+                if self.get_method(field).lower() != "llm":
+                    continue
+                rule = self.get_context_rule(field)
+                collected.append(LLMFieldGroup(fields=(field,), document_slice=rule))
+
+            return collected
+
         groups: "OrderedDict[DocumentSlice, list[str]]" = OrderedDict()
         for field in self._extractors.keys():
             if not self.is_enabled(field):
@@ -220,19 +250,58 @@ class FieldSettings:
         return self._context_rules.get(field, DocumentSlice())
 
     def _load_context_rules(self) -> None:
+        self._context_rules = {}
+        self._context_groups = []
         if not self._contexts_path or not self._contexts_path.exists():
-            self._context_rules = {}
             return
 
         with self._contexts_path.open("r", encoding="utf-8") as fh:
-            raw: Dict[str, Any] = json.load(fh)
+            raw = json.load(fh)
+
+        groups_data: Sequence[Dict[str, Any]] | None = None
+        if isinstance(raw, dict) and "groups" in raw:
+            maybe_groups = raw.get("groups", [])
+            if isinstance(maybe_groups, list):
+                groups_data = [item for item in maybe_groups if isinstance(item, dict)]
+        elif isinstance(raw, list):
+            groups_data = [item for item in raw if isinstance(item, dict)]
+
+        if groups_data is not None:
+            for item in groups_data:
+                fields = item.get("fields")
+                if not fields:
+                    continue
+                if not isinstance(fields, (list, tuple)):
+                    raise ValueError("Context group 'fields' must be a list of field names")
+
+                slice_dict = item.get("slice")
+                if slice_dict is None:
+                    slice_dict = {
+                        key: value
+                        for key, value in item.items()
+                        if key not in {"fields", "name", "slice"}
+                    }
+                document_slice = DocumentSlice.from_dict(slice_dict)
+                group = LLMFieldGroup(
+                    fields=tuple(str(field) for field in fields),
+                    document_slice=document_slice,
+                )
+                self._context_groups.append(group)
+                for field in group.fields:
+                    self._context_rules[field] = document_slice
+            return
+
+        if not isinstance(raw, dict):
+            raise ValueError("Invalid context configuration format")
 
         context_rules: Dict[str, DocumentSlice] = {}
         for field, data in raw.items():
             try:
-                context_rules[field] = DocumentSlice.from_dict(data)
+                context_rules[str(field)] = DocumentSlice.from_dict(data)
             except ValueError as exc:
-                raise ValueError(f"Invalid context configuration for field '{field}': {exc}") from exc
+                raise ValueError(
+                    f"Invalid context configuration for field '{field}': {exc}"
+                ) from exc
 
         self._context_rules = context_rules
 

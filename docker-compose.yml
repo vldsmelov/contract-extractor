@@ -35,7 +35,7 @@ services:
         condition: service_healthy
     environment:
       - OLLAMA_API=http://ollama:11434
-      - OLLAMA_MODEL=${MODEL:-qwen2.5:7b-instruct}
+      - OLLAMA_MODEL=${MODEL:-krith/qwen2.5-32b-instruct:IQ4_XS}
     entrypoint:
       - /bin/sh
       - -lc
@@ -65,7 +65,7 @@ services:
     container_name: contract-extractor-api
     environment:
       - OLLAMA_HOST=http://ollama:11434
-      - MODEL=${MODEL:-qwen2.5:7b-instruct}
+      - MODEL=${MODEL:-krith/qwen2.5-32b-instruct:IQ4_XS}
       - TEMPERATURE=${TEMPERATURE:-0.1}
       - MAX_TOKENS=${MAX_TOKENS:-1024}
       - NUMERIC_TOLERANCE=${NUMERIC_TOLERANCE:-0.01}

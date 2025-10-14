@@ -45,6 +45,7 @@ class ExtractionPipeline:
 
         # 2) LLM (если включен)
         prompt = ""
+        raw_outputs: List[str] = []
         if self.llm is not None:
             self.field_settings.refresh_prompts()
             aggregated = dict(partial)
@@ -55,14 +56,24 @@ class ExtractionPipeline:
                 )
                 guidelines = self.field_settings.build_guidelines_bundle(group.fields)
                 segment = group.document_slice.extract(cleaned_text)
-                aggregated = await self.llm.extract(
+                group_partial = {
+                    key: aggregated[key]
+                    for key in group.fields
+                    if key in aggregated
+                }
+                llm_result = await self.llm.extract(
                     segment,
-                    aggregated,
+                    group_partial,
                     schema_override=schema_subset,
                     field_guidelines=guidelines,
                 )
+                for field in group.fields:
+                    if field in llm_result:
+                        aggregated[field] = llm_result[field]
                 if self.llm.last_prompt:
                     prompts.append(self.llm.last_prompt)
+                if getattr(self.llm, "last_raw", ""):
+                    raw_outputs.append(self.llm.last_raw)
             data = aggregated
             prompt = "\n\n-----\n\n".join(prompts)
         else:
@@ -85,7 +96,8 @@ class ExtractionPipeline:
             pass
 
         debug = {
-            "disabled_fields": ", ".join(sorted(self.field_settings.disabled_fields()))
+            "disabled_fields": ", ".join(sorted(self.field_settings.disabled_fields())),
+            "llm_raw_outputs": raw_outputs,
         }
 
         prompt = normalize_whitespace(prompt) if prompt else ""
