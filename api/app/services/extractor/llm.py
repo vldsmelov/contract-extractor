@@ -29,6 +29,7 @@ class LLMExtractor(BaseExtractor):
             self.field_guidelines = ""
         self.client = OllamaClient()
         self.last_prompt: str = ""
+        self.last_raw: str = ""
 
     async def extract(
         self,
@@ -59,6 +60,7 @@ class LLMExtractor(BaseExtractor):
             temperature=CONFIG.temperature,
             max_tokens=CONFIG.max_tokens,
         )
+        self.last_raw = raw
 
         # Попытка распарсить JSON напрямую
         data = None

@@ -111,6 +111,33 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
         "debug": debug,
     }
 
+
+@app.post("/rawcheck")
+async def rawcheck(
+    file: UploadFile = File(None), payload: Optional[Dict[str, Any]] = Body(None)
+):
+    if file is None and not payload:
+        raise HTTPException(status_code=400, detail="Provide a text file or JSON body with {'text': '...'}")
+
+    if file is not None:
+        text = await read_text_from_upload(file)
+    else:
+        text = payload.get("text", "") if isinstance(payload, dict) else ""
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    _, _, _, debug, _ = await pipeline.run(text)
+    raw_outputs = []
+    if isinstance(debug, dict):
+        raw_outputs = debug.get("llm_raw_outputs") or []
+
+    if not raw_outputs:
+        return PlainTextResponse("", status_code=200)
+
+    body = "\n\n-----\n\n".join(raw_outputs)
+    return PlainTextResponse(body, status_code=200)
+
 @app.post("/test")
 async def test(text_file: UploadFile = File(...), gold_json: UploadFile = File(...)):
     text = await read_text_from_upload(text_file)
