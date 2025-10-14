@@ -5,7 +5,6 @@ from ..normalize import normalize_whitespace, extract_number
 
 class RuleBasedExtractor(BaseExtractor):
     SUM_PAT = re.compile(r'(?:итого|сумма\s*договора)\s*[:\-]?\s*([0-9\s\u00A0.,]+)', re.IGNORECASE)
-    VAT_PAT = re.compile(r'НДС\s*(?:[:\-]?\s*)?([0-9\s\u00A0.,]+)', re.IGNORECASE)
     VAT_RATE_PAT = re.compile(r'(?:ставка\s*ндс|ндс)\s*[:\-]?\s*(\d{1,2})\s*%?', re.IGNORECASE)
 
     _ORG_PREFIX = r'(?:[AА][OО]|[OО]{3}|[PР][AА][OО]|[ZЗ][AА][OО])'
@@ -26,11 +25,6 @@ class RuleBasedExtractor(BaseExtractor):
         m = self.SUM_PAT.search(text_norm)
         if m and (val := extract_number(m.group(1))) is not None:
             result.setdefault("Сумма", val)
-
-        # НДС сумма
-        m = self.VAT_PAT.search(text_norm)
-        if m and (val := extract_number(m.group(1))) is not None:
-            result.setdefault("СуммаНДС", val)
 
         # Ставка НДС
         m = self.VAT_RATE_PAT.search(text_norm)
