@@ -1,1 +1,1 @@
-# lightweight extras (put only small libs here to keep the final layer small)
+httpx==0.27.2

@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from .base import BaseExtractor
 from ..normalize import normalize_whitespace, extract_number
 
@@ -8,10 +8,16 @@ class RuleBasedExtractor(BaseExtractor):
     VAT_PAT = re.compile(r'НДС\s*(?:[:\-]?\s*)?([0-9\s\u00A0.,]+)', re.IGNORECASE)
     VAT_RATE_PAT = re.compile(r'(?:ставка\s*ндс|ндс)\s*[:\-]?\s*(\d{1,2})\s*%?', re.IGNORECASE)
 
-    ORG_PAT = re.compile(r'(?:(?:АО|ООО|ПАО|ЗАО)\s*\"[^\"]+\"|(?:(?:АО|ООО|ПАО|ЗАО)\s+[\w\s\"«».-]{3,}))')
+    _ORG_PREFIX = r'(?:[AА][OО]|[OО]{3}|[PР][AА][OО]|[ZЗ][AА][OО])'
+    ORG_PAT = re.compile(
+        rf'{_ORG_PREFIX}\s*(?:"[^"\n]+"|«[^»\n]+»)',
+        re.IGNORECASE,
+    )
     DATE_PAT = re.compile(r'(\d{2})[.](\d{2})[.](\d{4})')
 
-    async def extract(self, text: str, partial: Dict[str, Any]) -> Dict[str, Any]:
+    async def extract(
+        self, text: str, partial: Dict[str, Any], **kwargs: Any
+    ) -> Dict[str, Any]:
         text_norm = normalize_whitespace(text)
 
         result = dict(partial)
@@ -34,10 +40,18 @@ class RuleBasedExtractor(BaseExtractor):
         # Организации (грубая эвристика: первая — "Организация", вторая — "Контрагент")
         orgs = self.ORG_PAT.findall(text_norm)
         if orgs:
-            if "Организация" not in result:
-                result["Организация"] = orgs[0].strip()
-            if len(orgs) > 1 and "Контрагент" not in result:
-                result["Контрагент"] = orgs[1].strip()
+            normalized = [item.strip() for item in orgs if item.strip()]
+            org_value = result.get("Организация")
+            counterparty_value = result.get("Контрагент")
+            for value in normalized:
+                if not org_value:
+                    org_value = value
+                    result["Организация"] = value
+                    continue
+                if not counterparty_value and value != org_value:
+                    counterparty_value = value
+                    result["Контрагент"] = value
+                    break
 
         # Дата создания (если не было) — текущая
         result.setdefault("ДатаСоздания", __import__("datetime").datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"))

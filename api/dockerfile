@@ -1,14 +1,16 @@
-# Light application layer referencing the pre-built base image
-# IMPORTANT: build base first: 
-#   docker build -f api/dockerfile.base -t contract-extractor-api-base ./api
-FROM contract-extractor-api-base:latest
+# syntax=docker/dockerfile:1.7-labs
+ARG BASE_IMAGE=contract-extractor/api-base:cu130
+FROM ${BASE_IMAGE}
 
-WORKDIR /app
+WORKDIR /workspace/api
 
-# Copy only app code
-COPY app /app/app
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# Install lightweight/fast changing dependencies separately
+COPY requirements.txt /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy application code last to maximise cache hits
+COPY app /workspace/api/app
 
 EXPOSE 8080
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]

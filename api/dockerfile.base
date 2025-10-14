@@ -1,65 +1,22 @@
-# Heavy/base layer with CUDA 13, PyTorch nightly and Ollama
-ARG CUDA_BASE_IMAGE=nvidia/cuda:13.0.0-cudnn-devel-ubuntu22.04
-FROM ${CUDA_BASE_IMAGE}
+# syntax=docker/dockerfile:1.7-labs
+FROM python:3.11-slim
 
-ARG TORCH_CUDA_ARCH="12.0"
-ARG TORCH_INDEX_URL="https://download.pytorch.org/whl/nightly/cu130"
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=noninteractive \
-    TZ=Etc/UTC \
-    NVIDIA_VISIBLE_DEVICES=all \
-    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-    TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH}
+    TZ=Etc/UTC
 
-SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash curl jq procps iproute2 \
+    ca-certificates git build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Python 3.11 and build tooling
-RUN ln -fs /usr/share/zoneinfo/${TZ} /etc/localtime && \
-    echo ${TZ} > /etc/timezone && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        tzdata \
-        ca-certificates \
-        curl \
-        gnupg \
-        software-properties-common && \
-    add-apt-repository ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        git \
-        python3.11 \
-        python3.11-dev \
-        python3.11-distutils \
-        python3.11-venv \
-        pkg-config && \
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 && \
-    ln -sf /usr/bin/python3.11 /usr/local/bin/python && \
-    ln -sf /usr/bin/python3.11 /usr/local/bin/python3 && \
-    dpkg-reconfigure --frontend noninteractive tzdata && \
-    rm -rf /var/lib/apt/lists/*
+# Upgrade pip tooling once so that dependant layers can reuse it
+RUN python -m pip install --upgrade pip setuptools wheel
 
-ENV PATH="/root/.local/bin:${PATH}" \
-    PYTHONPATH="/app"
+# Preinstall framework and validation stack so it is cached in the base image
+COPY requirements-base.txt /tmp/requirements-base.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r /tmp/requirements-base.txt
 
-RUN python3.11 -m pip install --no-cache-dir --upgrade pip setuptools wheel
-
-# Install GPU-enabled PyTorch nightly stack for CUDA 13
-RUN python3.11 -m pip install --no-cache-dir --pre \
-        --index-url ${TORCH_INDEX_URL} \
-        torch \
-        torchvision \
-        torchaudio
-
-# Install Ollama with CUDA support
-RUN curl -fsSL https://ollama.com/install.sh | OLLAMA_INSTALL_GPU=true sh && \
-    rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-COPY requirements-base.txt /app/requirements-base.txt
-RUN python3.11 -m pip install --no-cache-dir -r /app/requirements-base.txt
-
-# This image intentionally contains heavy deps only once.
+WORKDIR /opt/app

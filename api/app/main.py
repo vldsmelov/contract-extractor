@@ -7,6 +7,7 @@ from pathlib import Path
 from .core.config import CONFIG
 from .core.schema import load_schema
 from .core.validator import SchemaValidator
+from .core.field_settings import FieldSettings
 from .services.extractor.pipeline import ExtractionPipeline
 from .services.warnings import to_payload
 from .services.compare import compare_dicts
@@ -17,10 +18,27 @@ APP_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = APP_DIR / "assets" / "schema.json"
 SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "system.txt"
 USER_TMPL_PATH = APP_DIR / "prompts" / "user_template.txt"
+FIELD_GUIDELINES_PATH = APP_DIR / "prompts" / "field_guidelines.md"
+FIELD_PROMPTS_DIR = APP_DIR / "prompts" / "fields"
+FIELD_EXTRACTORS_PATH = APP_DIR / "assets" / "field_extractors.json"
+FIELD_CONTEXTS_PATH = APP_DIR / "assets" / "field_contexts.json"
 
-schema = load_schema(str(SCHEMA_PATH))
+raw_schema = load_schema(str(SCHEMA_PATH))
+field_settings = FieldSettings(
+    str(FIELD_EXTRACTORS_PATH),
+    str(FIELD_GUIDELINES_PATH),
+    str(FIELD_PROMPTS_DIR),
+    str(FIELD_CONTEXTS_PATH),
+)
+schema = field_settings.apply_to_schema(raw_schema)
 validator = SchemaValidator(schema)
-pipeline = ExtractionPipeline(schema, str(SYSTEM_PROMPT_PATH), str(USER_TMPL_PATH))
+pipeline = ExtractionPipeline(
+    raw_schema,
+    str(SYSTEM_PROMPT_PATH),
+    str(USER_TMPL_PATH),
+    field_settings,
+    str(FIELD_GUIDELINES_PATH),
+)
 client = OllamaClient()
 
 app = FastAPI(title="Contract Extractor API", version=CONFIG.version)
@@ -36,11 +54,12 @@ async def status():
         "use_llm": CONFIG.use_llm,
         "model": CONFIG.model_name,
         "ollama_host": CONFIG.ollama_host,
+        "supported_languages": CONFIG.supported_languages,
     }
 
 @app.get("/config")
 async def get_config():
-    return CONFIG.dict()
+    return CONFIG.model_dump()
 
 @app.get("/schema")
 async def get_schema():
@@ -71,34 +90,69 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
 
-    data, warns, errors = await pipeline.run(text)
+    data, warns, errors, debug, ext_prompt = await pipeline.run(text)
 
     if errors:
-        return JSONResponse(
-            status_code=422,
-            content={
-                "ok": False,
-                "data": data,
-                "warnings": to_payload(warns),
-                "validation_errors": errors,
-            },
-        )
+        content = {
+            "ext_prompt": ext_prompt or "",
+            "ok": False,
+            "data": data,
+            "warnings": to_payload(warns),
+            "validation_errors": errors,
+            "debug": debug,
+        }
+        return JSONResponse(status_code=422, content=content)
 
-    return {"ok": True, "data": data, "warnings": to_payload(warns)}
+    return {
+        "ext_prompt": ext_prompt or "",
+        "ok": True,
+        "data": data,
+        "warnings": to_payload(warns),
+        "debug": debug,
+    }
+
+
+@app.post("/rawcheck")
+async def rawcheck(
+    file: UploadFile = File(None), payload: Optional[Dict[str, Any]] = Body(None)
+):
+    if file is None and not payload:
+        raise HTTPException(status_code=400, detail="Provide a text file or JSON body with {'text': '...'}")
+
+    if file is not None:
+        text = await read_text_from_upload(file)
+    else:
+        text = payload.get("text", "") if isinstance(payload, dict) else ""
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Empty text")
+
+    _, _, _, debug, _ = await pipeline.run(text)
+    raw_outputs = []
+    if isinstance(debug, dict):
+        raw_outputs = debug.get("llm_raw_outputs") or []
+
+    if not raw_outputs:
+        return PlainTextResponse("", status_code=200)
+
+    body = "\n\n-----\n\n".join(raw_outputs)
+    return PlainTextResponse(body, status_code=200)
 
 @app.post("/test")
 async def test(text_file: UploadFile = File(...), gold_json: UploadFile = File(...)):
     text = await read_text_from_upload(text_file)
     gold = await read_json_from_upload(gold_json)
 
-    data, warns, errors = await pipeline.run(text)
+    data, warns, errors, debug, ext_prompt = await pipeline.run(text)
 
     rows, summary = compare_dicts(gold, data)
 
     return {
+        "ext_prompt": ext_prompt or "",
         "ok": True,
         "table": rows,
         "summary": summary,
         "warnings": to_payload(warns),
-        **({"validation_errors": errors} if errors else {})
+        **({"validation_errors": errors} if errors else {}),
+        "debug": debug,
     }

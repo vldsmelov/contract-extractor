@@ -28,3 +28,7 @@ ENV/
 
 # MacOS
 .DS_Store
+
+# Docs
+sample/
+test/
