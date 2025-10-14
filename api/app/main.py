@@ -116,7 +116,7 @@ async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]]
     return await _process_text_payload(text)
 
 
-@app.post("/txtchech")
+@app.post("/txtcheck")
 async def txtchech(text: str = Body(..., media_type="text/plain")):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
