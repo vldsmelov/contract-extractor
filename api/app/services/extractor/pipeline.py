@@ -35,6 +35,7 @@ class ExtractionPipeline:
                 "КраткоеСодержание": {"type": "string"},
                 "ОбоснованиеВыбора": {"type": "string"},
                 "ОЭЗ_ОКПД2": {"type": "string"},
+                "СрокДоговора": {"type": "string"},
             },
         }
         if CONFIG.use_llm:
@@ -65,6 +66,7 @@ class ExtractionPipeline:
         summary_text = ""
         rationale_text = ""
         okpd2_code = ""
+        contract_term = ""
         prompts: List[str] = []
         raw_outputs: List[str] = []
 
@@ -88,12 +90,19 @@ class ExtractionPipeline:
                 if isinstance(summary_payload, dict)
                 else ""
             )
+            candidate_contract_term = (
+                summary_payload.get("СрокДоговора")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
             if isinstance(candidate_summary, str):
                 summary_text = clamp_summary_text(candidate_summary)
             if isinstance(candidate_rationale, str):
                 rationale_text = clamp_summary_text(candidate_rationale)
             if isinstance(candidate_okpd2, str):
                 okpd2_code = candidate_okpd2.strip()
+            if isinstance(candidate_contract_term, str):
+                contract_term = candidate_contract_term.strip()
             if getattr(self.summary_llm, "last_prompt", ""):
                 prompts.append(self.summary_llm.last_prompt)
             if getattr(self.summary_llm, "last_raw", ""):
@@ -138,6 +147,9 @@ class ExtractionPipeline:
 
         if okpd2_code:
             data["ОЭЗ_ОКПД2"] = okpd2_code
+        
+        if contract_term:
+            data["СрокДоговора"] = contract_term
 
         # 3) Валидация
         filtered_data = self.field_settings.filter_payload(data)
