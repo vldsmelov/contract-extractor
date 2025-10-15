@@ -95,6 +95,8 @@ class LLMExtractor(BaseExtractor):
                 skeleton[key] = 0
             elif type_ == "number":
                 skeleton[key] = 0.0
+            elif type_ == "boolean":
+                skeleton[key] = False
             else:
                 skeleton[key] = ""
         return skeleton
