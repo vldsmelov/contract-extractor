@@ -6,6 +6,11 @@ from app.core.config import CONFIG
 from app.core.field_settings import FieldSettings
 from ..warnings import WarningItem
 from ..normalize import normalize_whitespace
+from ..summary import (
+    build_selection_rationale,
+    build_short_summary,
+    clamp_summary_text,
+)
 
 class ExtractionPipeline:
     def __init__(
@@ -15,12 +20,24 @@ class ExtractionPipeline:
         user_tmpl_path: str,
         field_settings: FieldSettings,
         field_guidelines_path: Optional[str] = None,
+        summary_system_prompt_path: Optional[str] = None,
+        summary_user_tmpl_path: Optional[str] = None,
     ):
         self.field_settings = field_settings
         self.schema = self.field_settings.apply_to_schema(schema)
         self.validator = SchemaValidator(self.schema)
         self.rules = RuleBasedExtractor()
         self.llm = None
+        self.summary_llm = None
+        self._summary_schema = {
+            "type": "object",
+            "properties": {
+                "КраткоеСодержание": {"type": "string"},
+                "ОбоснованиеВыбора": {"type": "string"},
+                "ОЭЗ_ОКПД2": {"type": "string"},
+                "СрокДоговора": {"type": "string"},
+            },
+        }
         if CONFIG.use_llm:
             self.llm = LLMExtractor(
                 self.schema,
@@ -28,6 +45,12 @@ class ExtractionPipeline:
                 user_tmpl_path,
                 field_guidelines_path,
             )
+            if summary_system_prompt_path and summary_user_tmpl_path:
+                self.summary_llm = LLMExtractor(
+                    self._summary_schema,
+                    summary_system_prompt_path,
+                    summary_user_tmpl_path,
+                )
 
     async def run(self, text: str) -> (
         Dict[str, Any],
@@ -40,16 +63,59 @@ class ExtractionPipeline:
 
         cleaned_text = normalize_whitespace(text)
 
+        summary_text = ""
+        rationale_text = ""
+        okpd2_code = ""
+        contract_term = ""
+        prompts: List[str] = []
+        raw_outputs: List[str] = []
+
+        if self.summary_llm is not None:
+            try:
+                summary_payload = await self.summary_llm.extract(cleaned_text, {})
+            except Exception:
+                summary_payload = {}
+            candidate_summary = (
+                summary_payload.get("КраткоеСодержание")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            candidate_rationale = (
+                summary_payload.get("ОбоснованиеВыбора")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            candidate_okpd2 = (
+                summary_payload.get("ОЭЗ_ОКПД2")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            candidate_contract_term = (
+                summary_payload.get("СрокДоговора")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            if isinstance(candidate_summary, str):
+                summary_text = clamp_summary_text(candidate_summary)
+            if isinstance(candidate_rationale, str):
+                rationale_text = clamp_summary_text(candidate_rationale)
+            if isinstance(candidate_okpd2, str):
+                okpd2_code = candidate_okpd2.strip()
+            if isinstance(candidate_contract_term, str):
+                contract_term = candidate_contract_term.strip()
+            if getattr(self.summary_llm, "last_prompt", ""):
+                prompts.append(self.summary_llm.last_prompt)
+            if getattr(self.summary_llm, "last_raw", ""):
+                raw_outputs.append(self.summary_llm.last_raw)
+
         # 1) Правила
         partial = await self.rules.extract(cleaned_text, {})
 
         # 2) LLM (если включен)
         prompt = ""
-        raw_outputs: List[str] = []
         if self.llm is not None:
             self.field_settings.refresh_prompts()
             aggregated = dict(partial)
-            prompts: List[str] = []
             for group in self.field_settings.build_llm_groups():
                 schema_subset = self.field_settings.build_schema_subset(
                     self.schema, group.fields
@@ -79,9 +145,25 @@ class ExtractionPipeline:
         else:
             data = partial
 
+        if okpd2_code:
+            data["ОЭЗ_ОКПД2"] = okpd2_code
+        
+        if contract_term:
+            data["СрокДоговора"] = contract_term
+
         # 3) Валидация
         filtered_data = self.field_settings.filter_payload(data)
         errors = self.validator.validate(filtered_data)
+
+        if not summary_text:
+            summary_text = build_short_summary(filtered_data, cleaned_text)
+        if summary_text:
+            filtered_data["КраткоеСодержание"] = summary_text
+
+        if not rationale_text:
+            rationale_text = build_selection_rationale(filtered_data, cleaned_text)
+        if rationale_text:
+            filtered_data["ОбоснованиеВыбора"] = rationale_text
 
         # 4) Дополнительные предупреждения (пример: расхождение НДС)
         try:
