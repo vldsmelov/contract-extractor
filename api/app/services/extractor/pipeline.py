@@ -6,6 +6,7 @@ from app.core.config import CONFIG
 from app.core.field_settings import FieldSettings
 from ..warnings import WarningItem
 from ..normalize import normalize_whitespace
+from ..summary import build_short_summary
 
 class ExtractionPipeline:
     def __init__(
@@ -82,6 +83,10 @@ class ExtractionPipeline:
         # 3) Валидация
         filtered_data = self.field_settings.filter_payload(data)
         errors = self.validator.validate(filtered_data)
+
+        summary_text = build_short_summary(filtered_data, cleaned_text)
+        if summary_text:
+            filtered_data["КраткоеСодержание"] = summary_text
 
         # 4) Дополнительные предупреждения (пример: расхождение НДС)
         try:
