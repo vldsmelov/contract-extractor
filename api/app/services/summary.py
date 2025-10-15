@@ -103,6 +103,38 @@ def build_short_summary(data: Dict[str, Any], source_text: str) -> str:
     return _trim_summary(summary, _MAX_SUMMARY_LENGTH)
 
 
+def build_selection_rationale(data: Dict[str, Any], source_text: str) -> str:
+    """Heuristically justify the supplier choice within the 300-character limit."""
+
+    supplier = _normalize_party_name(data.get("Контрагент"))
+    intro = f"Выбор {supplier} обоснован:" if supplier else "Выбор поставщика обоснован:"
+
+    reasons: List[str] = []
+
+    total = _to_float(data.get("Сумма"))
+    if total is not None:
+        reasons.append(f"цена {_format_money(total)} руб.")
+
+    vat_fragment = _build_vat_reason(data)
+    if vat_fragment:
+        reasons.append(vat_fragment)
+
+    payment_fragment = _build_payment_fragment(data.get("СпособОплаты"))
+    if payment_fragment:
+        reasons.append(payment_fragment)
+
+    categories = _detect_categories(data, source_text)
+    if categories:
+        reasons.append(f"предмет — {_join_categories(categories)}")
+
+    if not reasons:
+        return _trim_summary(f"{intro.rstrip(':')}.", _MAX_SUMMARY_LENGTH)
+
+    body = "; ".join(reasons)
+    rationale = f"{intro} {body}."
+    return _trim_summary(rationale, _MAX_SUMMARY_LENGTH)
+
+
 def _build_parties_line(data: Dict[str, Any]) -> str:
     buyer = _normalize_party_name(data.get("Организация"))
     seller = _normalize_party_name(data.get("Контрагент"))
@@ -156,6 +188,37 @@ def _build_subject_line(data: Dict[str, Any], source_text: str) -> str:
         joined = _join_categories(categories)
         return f"Предмет: приобретение {joined}."
     return "Предмет: закупка товаров."
+
+
+def _build_vat_reason(data: Dict[str, Any]) -> str:
+    vat_rate = _to_float(data.get("СтавкаНДС"))
+    vat_amount = _to_float(data.get("СуммаНДС"))
+
+    if vat_rate is not None:
+        if vat_rate <= 0:
+            return "без НДС"
+        fragment = f"НДС {_format_rate(vat_rate)}%"
+        if vat_amount is not None:
+            fragment += " выделен"
+        return fragment
+
+    if vat_amount is not None:
+        return "НДС выделен"
+
+    return ""
+
+
+def _build_payment_fragment(value: Any) -> str:
+    if not value:
+        return ""
+    if not isinstance(value, str):
+        value = str(value)
+
+    cleaned = re.sub(r"\s+", " ", value).strip()
+    if not cleaned:
+        return ""
+
+    return f"оплата — {cleaned}"
 
 
 def _detect_categories(data: Dict[str, Any], source_text: str) -> List[str]:

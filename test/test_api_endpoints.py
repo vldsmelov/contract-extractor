@@ -30,6 +30,9 @@ def test_check_endpoint_accepts_json_payload() -> None:
     summary = body["data"].get("КраткоеСодержание")
     assert isinstance(summary, str)
     assert 0 < len(summary) <= 300
+    justification = body["data"].get("ОбоснованиеВыбора")
+    assert isinstance(justification, str)
+    assert 0 < len(justification) <= 300
 
 
 def test_check_endpoint_accepts_file_upload() -> None:
@@ -45,6 +48,9 @@ def test_check_endpoint_accepts_file_upload() -> None:
     summary = body["data"].get("КраткоеСодержание")
     assert isinstance(summary, str)
     assert 0 < len(summary) <= 300
+    justification = body["data"].get("ОбоснованиеВыбора")
+    assert isinstance(justification, str)
+    assert 0 < len(justification) <= 300
 
 
 def test_test_endpoint_handles_multipart_payload() -> None:

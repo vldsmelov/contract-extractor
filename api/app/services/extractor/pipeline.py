@@ -6,7 +6,11 @@ from app.core.config import CONFIG
 from app.core.field_settings import FieldSettings
 from ..warnings import WarningItem
 from ..normalize import normalize_whitespace
-from ..summary import build_short_summary, clamp_summary_text
+from ..summary import (
+    build_selection_rationale,
+    build_short_summary,
+    clamp_summary_text,
+)
 
 class ExtractionPipeline:
     def __init__(
@@ -27,7 +31,10 @@ class ExtractionPipeline:
         self.summary_llm = None
         self._summary_schema = {
             "type": "object",
-            "properties": {"КраткоеСодержание": {"type": "string"}},
+            "properties": {
+                "КраткоеСодержание": {"type": "string"},
+                "ОбоснованиеВыбора": {"type": "string"},
+            },
         }
         if CONFIG.use_llm:
             self.llm = LLMExtractor(
@@ -55,6 +62,7 @@ class ExtractionPipeline:
         cleaned_text = normalize_whitespace(text)
 
         summary_text = ""
+        rationale_text = ""
         prompts: List[str] = []
         raw_outputs: List[str] = []
 
@@ -63,9 +71,20 @@ class ExtractionPipeline:
                 summary_payload = await self.summary_llm.extract(cleaned_text, {})
             except Exception:
                 summary_payload = {}
-            candidate = summary_payload.get("КраткоеСодержание") if isinstance(summary_payload, dict) else ""
-            if isinstance(candidate, str):
-                summary_text = clamp_summary_text(candidate)
+            candidate_summary = (
+                summary_payload.get("КраткоеСодержание")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            candidate_rationale = (
+                summary_payload.get("ОбоснованиеВыбора")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            if isinstance(candidate_summary, str):
+                summary_text = clamp_summary_text(candidate_summary)
+            if isinstance(candidate_rationale, str):
+                rationale_text = clamp_summary_text(candidate_rationale)
             if getattr(self.summary_llm, "last_prompt", ""):
                 prompts.append(self.summary_llm.last_prompt)
             if getattr(self.summary_llm, "last_raw", ""):
@@ -116,6 +135,11 @@ class ExtractionPipeline:
             summary_text = build_short_summary(filtered_data, cleaned_text)
         if summary_text:
             filtered_data["КраткоеСодержание"] = summary_text
+
+        if not rationale_text:
+            rationale_text = build_selection_rationale(filtered_data, cleaned_text)
+        if rationale_text:
+            filtered_data["ОбоснованиеВыбора"] = rationale_text
 
         # 4) Дополнительные предупреждения (пример: расхождение НДС)
         try:
