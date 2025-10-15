@@ -20,6 +20,8 @@ SCHEMA_PATH = APP_DIR / "assets" / "schema.json"
 SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "system.txt"
 USER_TMPL_PATH = APP_DIR / "prompts" / "user_template.txt"
 FIELD_GUIDELINES_PATH = APP_DIR / "prompts" / "field_guidelines.md"
+SUMMARY_SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "summary_system.txt"
+SUMMARY_USER_TMPL_PATH = APP_DIR / "prompts" / "summary_user_template.txt"
 FIELD_PROMPTS_DIR = APP_DIR / "prompts" / "fields"
 FIELD_EXTRACTORS_PATH = APP_DIR / "assets" / "field_extractors.json"
 FIELD_CONTEXTS_PATH = APP_DIR / "assets" / "field_contexts.json"
@@ -39,6 +41,8 @@ pipeline = ExtractionPipeline(
     str(USER_TMPL_PATH),
     field_settings,
     str(FIELD_GUIDELINES_PATH),
+    str(SUMMARY_SYSTEM_PROMPT_PATH),
+    str(SUMMARY_USER_TMPL_PATH),
 )
 client = OllamaClient()
 

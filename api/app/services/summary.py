@@ -75,6 +75,19 @@ _LEGAL_FORMS = (
 _OKPD_PATTERN = re.compile(r"\b(\d{2})\.(\d{2})(?:\.(\d{1,2}))?\b")
 
 
+def clamp_summary_text(text: str) -> str:
+    """Normalize spacing and trim the text to the maximum allowed length."""
+
+    if not isinstance(text, str):
+        return ""
+
+    normalized = re.sub(r"\s+", " ", text).strip()
+    if not normalized:
+        return ""
+
+    return _trim_summary(normalized, _MAX_SUMMARY_LENGTH)
+
+
 def build_short_summary(data: Dict[str, Any], source_text: str) -> str:
     """Return a compact textual summary (≤300 characters) of the contract."""
 
