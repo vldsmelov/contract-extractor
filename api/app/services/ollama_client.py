@@ -1,8 +1,32 @@
 from typing import Optional
 
 import httpx
-from httpx import HTTPStatusError
+from httpx import HTTPStatusError, HTTPError
 from ..core.config import CONFIG
+
+
+class OllamaServiceError(RuntimeError):
+    """Raised when the Ollama service cannot be reached or returns an error."""
+
+
+def _summarize_http_error(exc: HTTPStatusError, endpoint: str) -> str:
+    """Return a short human readable description for HTTP failures."""
+
+    response = exc.response
+    reason = response.reason_phrase or "Unknown error"
+    body = (response.text or "").strip()
+
+    if body and len(body) > 200:
+        body = f"{body[:197]}..."
+
+    details = f"HTTP {response.status_code} while calling {endpoint}: {reason}"
+    if body:
+        details = f"{details}. Response body: {body}"
+
+    return (
+        "The Ollama service responded with an unexpected error. "
+        f"{details}."
+    )
 
 class OllamaClient:
     def __init__(self, base_url: Optional[str] = None, model: Optional[str] = None):
@@ -44,13 +68,25 @@ class OllamaClient:
                 data = response.json()
                 return data.get("message", {}).get("content", "")
             except httpx.ReadTimeout as exc:
-                raise RuntimeError(
+                raise OllamaServiceError(
                     "Timed out waiting for a response from the Ollama service. "
                     "Consider increasing OLLAMA_READ_TIMEOUT or checking the model performance."
                 ) from exc
+            except httpx.ConnectError as exc:
+                raise OllamaServiceError(
+                    "Unable to connect to the Ollama service at "
+                    f"{self.base_url}. Ensure the service is running at this address "
+                    "(default http://localhost:11434) or update the OLLAMA_HOST "
+                    "environment variable."
+                ) from exc
             except HTTPStatusError as exc:
                 if exc.response.status_code != 404:
-                    raise
+                    raise OllamaServiceError(_summarize_http_error(exc, "/api/chat")) from exc
+            except HTTPError as exc:
+                raise OllamaServiceError(
+                    "Unexpected error while communicating with the Ollama service. "
+                    f"{exc}"
+                ) from exc
 
             # Fallback для старых версий Ollama без /api/chat
             generate_payload = {
@@ -61,13 +97,55 @@ class OllamaClient:
                 "options": options,
             }
 
-            response = await client.post("/api/generate", json=generate_payload)
-            response.raise_for_status()
-            data = response.json()
-            return data.get("response", "")
+            try:
+                response = await client.post("/api/generate", json=generate_payload)
+                response.raise_for_status()
+                data = response.json()
+                return data.get("response", "")
+            except httpx.ReadTimeout as exc:
+                raise OllamaServiceError(
+                    "Timed out waiting for a response from the Ollama service while using the fallback API."
+                ) from exc
+            except httpx.ConnectError as exc:
+                raise OllamaServiceError(
+                    "Unable to connect to the Ollama service at "
+                    f"{self.base_url} when using the fallback API. Ensure the service is "
+                    "running at this address (default http://localhost:11434) or update "
+                    "the OLLAMA_HOST environment variable."
+                ) from exc
+            except HTTPStatusError as exc:
+                raise OllamaServiceError(
+                    _summarize_http_error(exc, "/api/generate")
+                ) from exc
+            except HTTPError as exc:
+                raise OllamaServiceError(
+                    "Unexpected error while communicating with the Ollama service during the fallback request. "
+                    f"{exc}"
+                ) from exc
 
     async def list_models(self):
         async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-            r = await client.get("/api/tags")
-            r.raise_for_status()
-            return r.json()
+            try:
+                r = await client.get("/api/tags")
+                r.raise_for_status()
+                return r.json()
+            except httpx.ReadTimeout as exc:
+                raise OllamaServiceError(
+                    "Timed out while requesting the model list from the Ollama service."
+                ) from exc
+            except httpx.ConnectError as exc:
+                raise OllamaServiceError(
+                    "Unable to connect to the Ollama service at "
+                    f"{self.base_url} when requesting the model list. Ensure the service "
+                    "is running at this address (default http://localhost:11434) or "
+                    "update the OLLAMA_HOST environment variable."
+                ) from exc
+            except HTTPStatusError as exc:
+                raise OllamaServiceError(
+                    _summarize_http_error(exc, "/api/tags")
+                ) from exc
+            except HTTPError as exc:
+                raise OllamaServiceError(
+                    "Unexpected error while requesting the model list from the Ollama service. "
+                    f"{exc}"
+                ) from exc
