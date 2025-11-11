@@ -13,7 +13,7 @@ from .services.extractor.pipeline import ExtractionPipeline
 from .services.warnings import to_payload
 from .services.compare import compare_dicts
 from .services.utils import read_text_from_upload, read_json_from_upload
-from .services.ollama_client import OllamaClient
+from .services.ollama_client import OllamaClient, OllamaServiceError
 
 APP_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = APP_DIR / "assets" / "schema.json"
@@ -52,6 +52,9 @@ app = FastAPI(title="Contract Extractor API", version=CONFIG.version)
 async def _process_text_payload(text: str):
     try:
         data, warns, errors, debug, ext_prompt = await pipeline.run(text)
+    except OllamaServiceError as exc:
+        logging.exception("Ollama service error during text processing")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - defensive safeguard
         logging.exception("Unhandled error during text processing")
         raise HTTPException(status_code=500, detail="Internal processing error") from exc
@@ -96,6 +99,8 @@ async def get_schema():
 async def get_models():
     try:
         return await client.list_models()
+    except OllamaServiceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ollama error: {e}")
 

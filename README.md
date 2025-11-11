@@ -1,10 +1,19 @@
 # Contract Extractor API
 
-Локальный сервис извлечения JSON из текста договора (без табличной части). Сервис использует FastAPI, валидирует ответы по JSON Schema и при необходимости обращается к Ollama для LLM-поддержки.
+Локальный сервис извлечения JSON из текста договора (без табличной части). Сервис использует FastAPI, валидирует ответы по JSON Schema и обращается к внешнему демону Ollama, который должен быть запущен отдельно по адресу `http://localhost:11434`.
+
+## Внешний сервис Ollama
+- API всегда ожидает, что Ollama доступна по `http://localhost:11434`. Переменные окружения для изменения адреса больше не поддерживаются.
+- По умолчанию используется модель `krith/qwen2.5-32b-instruct:IQ4_XS`. Убедитесь, что она загружена (`ollama pull krith/qwen2.5-32b-instruct:IQ4_XS`).
+- Проверьте доступность демона командой `curl http://localhost:11434/api/tags`.
+
+Запустить сервис Ollama можно из официального пакета (`ollama serve`) или через Docker (важно использовать host-сеть, чтобы `http://localhost:11434` был доступен из контейнера API):
+
+```bash
+docker run --rm --network host -v ollama:/root/.ollama ollama/ollama:latest
+```
 
 ## Контейнеры и образа
-- **`ollama`** — официальный образ `ollama/ollama` с GPU-поддержкой. Отвечает за запуск локальной LLM и хранение скачанных моделей в отдельном Docker-томе. Клиент API поддерживает как новый эндпоинт `/api/chat`, так и старый `/api/generate`, поэтому совместим с разными версиями демона. Чтобы контейнер действительно получил доступ к GPU, Compose-файл запрашивает устройства `nvidia` и прокидывает переменные `NVIDIA_VISIBLE_DEVICES=all` и `NVIDIA_DRIVER_CAPABILITIES=compute,utility`; убедитесь, что на хосте установлен NVIDIA Container Toolkit и команда `docker info | grep -i nvidia` показывает поддержку GPU. В противном случае Ollama автоматически перейдёт в CPU-режим, что заметно снижает скорость генерации.
-- **`ollama-pull`** — вспомогательный контейнер на базе `curlimages/curl`, который дожидается старта Ollama и инициирует загрузку выбранной модели.
 - **`api`** — образ FastAPI-сервиса. Собирается в два этапа:
   1. `api/dockerfile.base` формирует тяжёлый базовый слой на основе `python:3.11-slim` и устанавливает фреймворк, валидацию и вспомогательные утилиты.
   2. `api/dockerfile` добавляет лёгкие зависимости и исходный код приложения.
@@ -23,15 +32,16 @@
    docker build -f api/dockerfile.base -t contract-extractor/api-base:cu130 ./api
    ```
 
-2. **Запустите сервисы через Docker Compose**. Укажите уже собранный базовый образ через переменную `API_BASE_IMAGE`, чтобы переиспользовать кэш.
+2. **Убедитесь, что Ollama запущена**. Проверьте `curl http://localhost:11434/api/tags` — ответ должен содержать список моделей. Если демона нет, поднимите его командой `ollama serve` или через Docker (см. выше).
+
+3. **Запустите сервис через Docker Compose**. Укажите уже собранный базовый образ через переменную `API_BASE_IMAGE`, чтобы переиспользовать кэш. Compose-файл использует host-сеть, поэтому контейнер API получает доступ к Ollama по `http://localhost:11434`.
    ```bash
    API_BASE_IMAGE=contract-extractor/api-base:cu130 \
-   MODEL=krith/qwen2.5-32b-instruct:IQ4_XS \
    docker compose up --build
    ```
-   После старта API будет доступно на `http://localhost:8080`, а Ollama — на `http://localhost:11434`.
+   После старта API будет доступно на `http://localhost:8080`, Ollama — на `http://localhost:11434`.
 
-3. **Изменение модели**. Передайте другое имя модели через `MODEL=...` (например, `MODEL=llama3.1`). По умолчанию сервис запрашивает сжатую версию `krith/qwen2.5-32b-instruct:IQ4_XS`, контейнер `ollama-pull` автоматически скачает нужный образ при запуске.
+4. **Изменение модели (опционально)**. Передайте другое имя модели через `MODEL=...` (например, `MODEL=llama3.1`). По умолчанию сервис запрашивает сжатую версию `krith/qwen2.5-32b-instruct:IQ4_XS`.
 
 ## Чистый старт Docker-среды
 Если нужно пересобрать всё с нуля или избавиться от возможных конфликтов кэша/контейнеров:
@@ -44,9 +54,6 @@ docker builder prune --all --force
 
 # Удалить собранные образы (если они есть)
 docker image rm contract-extractor/api:dev contract-extractor/api-base:cu130 || true
-
-# Удалить сохранённые модели Ollama
-docker volume rm contract_extractor_ollama_models || true
 ```
 После этого повторите шаги из раздела «Сборка и запуск».
 
