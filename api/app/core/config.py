@@ -7,9 +7,8 @@ class AppConfig(BaseModel):
     app_name: str = "contract-extractor-api"
     version: str = "0.1.0"
     env: str = os.getenv("ENV", "dev")
-    # По умолчанию ожидаем, что Ollama поднят локально рядом с API.
-    # Значение можно переопределить переменной окружения OLLAMA_HOST.
-    ollama_host: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    # Ollama всегда доступна как внешний сервис по фиксированному адресу.
+    ollama_host: str = "http://localhost:11434"
     model_name: str = os.getenv("MODEL", "krith/qwen2.5-32b-instruct:IQ4_XS")
     temperature: float = float(os.getenv("TEMPERATURE", "0.1"))
     max_tokens: int = int(os.getenv("MAX_TOKENS", "1024"))

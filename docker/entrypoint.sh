@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-APP_OLLAMA_HOST="${OLLAMA_HOST:-http://host.docker.internal:11434}"
+APP_OLLAMA_HOST="http://localhost:11434"
 APP_PORT="${API_PORT:-8080}"
 
 for i in $(seq 1 60); do
