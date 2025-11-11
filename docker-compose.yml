@@ -81,7 +81,7 @@ services:
     working_dir: /workspace/api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --log-level info
     ports:
-      - "8080:8080"
+      - "8085:8080"
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 15s
