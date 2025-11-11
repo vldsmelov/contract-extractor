@@ -36,6 +36,9 @@ class ExtractionPipeline:
                 "ОбоснованиеВыбора": {"type": "string"},
                 "ОЭЗ_ОКПД2": {"type": "string"},
                 "СрокДоговора": {"type": "string"},
+                "Ответственный": {"type": "string"},
+                "seza_ТипДоговора": {"type": "string"},
+                "СпособОплаты": {"type": "string"},
             },
         }
         if CONFIG.use_llm:
@@ -67,6 +70,9 @@ class ExtractionPipeline:
         rationale_text = ""
         okpd2_code = ""
         contract_term = ""
+        responsible_person = ""
+        contract_type = ""
+        payment_method = ""
         prompts: List[str] = []
         raw_outputs: List[str] = []
 
@@ -95,6 +101,22 @@ class ExtractionPipeline:
                 if isinstance(summary_payload, dict)
                 else ""
             )
+            candidate_responsible = (
+                summary_payload.get("Ответственный")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            candidate_contract_type = (
+                summary_payload.get("seza_ТипДоговора")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            candidate_payment_method = (
+                summary_payload.get("СпособОплаты")
+                if isinstance(summary_payload, dict)
+                else ""
+            )
+            
             if isinstance(candidate_summary, str):
                 summary_text = clamp_summary_text(candidate_summary)
             if isinstance(candidate_rationale, str):
@@ -103,6 +125,13 @@ class ExtractionPipeline:
                 okpd2_code = candidate_okpd2.strip()
             if isinstance(candidate_contract_term, str):
                 contract_term = candidate_contract_term.strip()
+            if isinstance(candidate_responsible, str):
+                responsible_person = candidate_responsible.strip()
+            if isinstance(candidate_contract_type, str):
+                contract_type = candidate_contract_type.strip()
+            if isinstance(candidate_payment_method, str):
+                payment_method = candidate_payment_method.strip()
+                
             if getattr(self.summary_llm, "last_prompt", ""):
                 prompts.append(self.summary_llm.last_prompt)
             if getattr(self.summary_llm, "last_raw", ""):
@@ -150,7 +179,22 @@ class ExtractionPipeline:
         
         if contract_term:
             data["СрокДоговора"] = contract_term
-
+        
+        if responsible_person:
+            existing_responsible = data.get("Ответственный")
+            if not isinstance(existing_responsible, str) or not existing_responsible.strip():
+                data["Ответственный"] = responsible_person
+        
+        if contract_type:
+            existing_contract_type = data.get("seza_ТипДоговора")
+            if not isinstance(existing_contract_type, str) or not existing_contract_type.strip():
+                data["seza_ТипДоговора"] = contract_type
+        
+        if payment_method:
+            existing_payment_method = data.get("СпособОплаты")
+            if not isinstance(existing_payment_method, str) or not existing_payment_method.strip():
+                data["СпособОплаты"] = payment_method
+                
         # 3) Валидация
         filtered_data = self.field_settings.filter_payload(data)
         errors = self.validator.validate(filtered_data)

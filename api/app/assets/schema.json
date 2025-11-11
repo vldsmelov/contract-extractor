@@ -143,7 +143,7 @@
       "type": "string"
     },
     "ОЭЗ_Резидент": {
-      "type": "string"
+      "type": "boolean"
     },
     "ОЭЗ_Субъект": {
       "type": "string"
