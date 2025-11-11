@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 APP_OLLAMA_HOST="http://localhost:11434"
-APP_PORT="${API_PORT:-8080}"
+APP_PORT="${API_PORT:-8085}"
 
 for i in $(seq 1 60); do
   if curl -fsS "${APP_OLLAMA_HOST}/api/tags" >/dev/null 2>&1; then
