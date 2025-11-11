@@ -10,7 +10,6 @@ services:
         BASE_IMAGE: ${API_BASE_IMAGE:-contract-extractor/api-base:cu130}
     container_name: contract-extractor-api
     environment:
-      - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}
       - MODEL=${MODEL:-krith/qwen2.5-32b-instruct:IQ4_XS}
       - TEMPERATURE=${TEMPERATURE:-0.1}
       - MAX_TOKENS=${MAX_TOKENS:-1024}
@@ -21,8 +20,7 @@ services:
       - ./api:/workspace/api
     working_dir: /workspace/api
     command: uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload --log-level info
-    ports:
-      - "8085:8080"
+    network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 15s
