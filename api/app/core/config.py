@@ -7,7 +7,7 @@ class AppConfig(BaseModel):
     app_name: str = "contract-extractor-api"
     version: str = "0.1.0"
     env: str = os.getenv("ENV", "dev")
-    ollama_host: str = os.getenv("OLLAMA_HOST", "http://ollama:11434")
+    ollama_host: str = os.getenv("OLLAMA_HOST", "http://host.docker.internal:11434")
     model_name: str = os.getenv("MODEL", "krith/qwen2.5-32b-instruct:IQ4_XS")
     temperature: float = float(os.getenv("TEMPERATURE", "0.1"))
     max_tokens: int = int(os.getenv("MAX_TOKENS", "1024"))
