@@ -32,3 +32,4 @@ ENV/
 # Docs
 sample/
 test/
+api/app/assets/users_assets
