@@ -33,3 +33,4 @@ ENV/
 sample/
 test/
 api/app/assets/users_assets
+api/app/prompts/user_prompts

@@ -1,6 +1,6 @@
-from fastapi import FastAPI, UploadFile, File, Body, HTTPException
+from fastapi import FastAPI, UploadFile, File, Body, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 from pathlib import Path
 import logging
@@ -29,6 +29,12 @@ USER_FIELD_EXTRACTORS_PATH = USER_ASSETS_DIR / "field_extractors.json"
 FIELD_CONTEXTS_PATH = APP_DIR / "assets" / "field_contexts.json"
 USER_SCHEMA_PATH = USER_ASSETS_DIR / "schema.json"
 USER_FIELD_CONTEXTS_PATH = USER_ASSETS_DIR / "contexts.json"
+USER_PROMPTS_DIR = APP_DIR / "prompts" / "user_prompts"
+USER_FIELD_GUIDELINES_PATH = USER_PROMPTS_DIR / "field_guidelines.md"
+USER_SYSTEM_PROMPT_PATH = USER_PROMPTS_DIR / "system.txt"
+USER_USER_TMPL_PATH = USER_PROMPTS_DIR / "user_template.txt"
+USER_SUMMARY_SYSTEM_PROMPT_PATH = USER_PROMPTS_DIR / "summary_system.txt"
+USER_SUMMARY_USER_TMPL_PATH = USER_PROMPTS_DIR / "summary_user_template.txt"
 
 raw_schema = load_schema(str(SCHEMA_PATH))
 field_settings = FieldSettings(
@@ -87,6 +93,13 @@ def _load_json_file(path: Path):
     except json.JSONDecodeError as exc:  # pragma: no cover - defensive safeguard
         logging.exception("Invalid JSON content in %s", path)
         raise HTTPException(status_code=500, detail="Invalid JSON content") from exc
+
+def _load_text_file(path: Path):
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            return file.read()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Requested resource not found") from exc
 
 @app.get("/healthz")
 async def healthz():
@@ -157,6 +170,73 @@ async def change_fields(payload: Dict[str, Any] = Body(...), f: Optional[str] = 
             json.dump(payload, file, ensure_ascii=False, indent=2)
     except TypeError as exc:
         raise HTTPException(status_code=400, detail="Payload is not JSON serializable") from exc
+
+    return {"status": "ok"}
+
+@app.get("/prompts/system")
+async def get_prompts(q: str = "", f: Optional[List[str]] = Query(None)):
+    default_files = {
+        "field_guidelines": FIELD_GUIDELINES_PATH,
+        "summary_system": SUMMARY_SYSTEM_PROMPT_PATH,
+        "summary_user_template": SUMMARY_USER_TMPL_PATH,
+        "system": SYSTEM_PROMPT_PATH,
+        "user_template": USER_TMPL_PATH,
+    }
+
+    user_files = {
+        "field_guidelines": USER_FIELD_GUIDELINES_PATH,
+        "summary_system": USER_SUMMARY_SYSTEM_PROMPT_PATH,
+        "summary_user_template": USER_SUMMARY_USER_TMPL_PATH,
+        "system": USER_SYSTEM_PROMPT_PATH,
+        "user_template": USER_USER_TMPL_PATH,
+    }
+
+    target_files = None
+    if q == "get":
+        target_files = default_files
+    elif q == "check":
+        target_files = user_files
+    else:
+        raise HTTPException(status_code=400, detail="Invalid query parameter for 'q'")
+
+    keys = f or list(target_files.keys())
+    invalid_keys = [key for key in keys if key not in target_files]
+    if invalid_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid query parameter for 'f': {', '.join(sorted(set(invalid_keys)))}",
+        )
+
+    return {key: _load_text_file(target_files[key]) for key in keys}
+
+
+@app.post("/prompts/system_change")
+async def change_prompts(payload: Dict[str, Any] = Body(...)):
+    user_files = {
+        "field_guidelines": USER_FIELD_GUIDELINES_PATH,
+        "summary_system": USER_SUMMARY_SYSTEM_PROMPT_PATH,
+        "summary_user_template": USER_SUMMARY_USER_TMPL_PATH,
+        "system": USER_SYSTEM_PROMPT_PATH,
+        "user_template": USER_USER_TMPL_PATH,
+    }
+
+    if not payload:
+        raise HTTPException(status_code=400, detail="Payload cannot be empty")
+
+    invalid_keys = [key for key in payload if key not in user_files]
+    if invalid_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid payload keys: {', '.join(sorted(set(invalid_keys)))}",
+        )
+
+    USER_PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    for key, value in payload.items():
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail=f"Value for '{key}' must be a string")
+        with user_files[key].open("w", encoding="utf-8") as file:
+            file.write(value)
 
     return {"status": "ok"}
 
