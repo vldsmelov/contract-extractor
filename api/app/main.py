@@ -24,7 +24,11 @@ SUMMARY_SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "summary_system.txt"
 SUMMARY_USER_TMPL_PATH = APP_DIR / "prompts" / "summary_user_template.txt"
 FIELD_PROMPTS_DIR = APP_DIR / "prompts" / "fields"
 FIELD_EXTRACTORS_PATH = APP_DIR / "assets" / "field_extractors.json"
+USER_ASSETS_DIR = APP_DIR / "assets" / "users_assets"
+USER_FIELD_EXTRACTORS_PATH = USER_ASSETS_DIR / "field_extractors.json"
 FIELD_CONTEXTS_PATH = APP_DIR / "assets" / "field_contexts.json"
+USER_SCHEMA_PATH = USER_ASSETS_DIR / "schema.json"
+USER_FIELD_CONTEXTS_PATH = USER_ASSETS_DIR / "contexts.json"
 
 raw_schema = load_schema(str(SCHEMA_PATH))
 field_settings = FieldSettings(
@@ -73,6 +77,17 @@ async def _process_text_payload(text: str):
     response_content.update({"ok": True})
     return response_content
 
+
+def _load_json_file(path: Path):
+    try:
+        with path.open("r", encoding="utf-8") as file:
+            return json.load(file)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Requested resource not found") from exc
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive safeguard
+        logging.exception("Invalid JSON content in %s", path)
+        raise HTTPException(status_code=500, detail="Invalid JSON content") from exc
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
@@ -94,6 +109,56 @@ async def get_config():
 @app.get("/schema")
 async def get_schema():
     return schema
+
+@app.get("/assets/fields")
+async def get_fields(q: str = "", f: str = "extractors"):
+    default_files = {
+        "extractors": FIELD_EXTRACTORS_PATH,
+        "schema": SCHEMA_PATH,
+        "contexts": FIELD_CONTEXTS_PATH,
+    }
+    user_files = {
+        "extractors": USER_FIELD_EXTRACTORS_PATH,
+        "schema": USER_SCHEMA_PATH,
+        "contexts": USER_FIELD_CONTEXTS_PATH,
+    }
+
+    if q == "get":
+        if f not in default_files:
+            raise HTTPException(status_code=400, detail="Invalid query parameter for 'f'")
+        return _load_json_file(default_files[f])
+
+    if q == "check":
+        if f not in user_files:
+            raise HTTPException(status_code=400, detail="Invalid query parameter for 'f'")
+        return _load_json_file(user_files[f])
+
+    raise HTTPException(status_code=400, detail="Invalid query parameter for 'q'")
+
+
+@app.post("/assets/change")
+async def change_fields(payload: Dict[str, Any] = Body(...), f: Optional[str] = None):
+    user_files = {
+        "extractors": USER_FIELD_EXTRACTORS_PATH,
+        "schema": USER_SCHEMA_PATH,
+        "contexts": USER_FIELD_CONTEXTS_PATH,
+    }
+
+    if not f:
+        raise HTTPException(status_code=400, detail="Missing query parameter for 'f'")
+
+    if f not in user_files:
+        raise HTTPException(status_code=400, detail="Invalid query parameter for 'f'")
+
+    USER_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        with user_files[f].open("w", encoding="utf-8") as file:
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+    except TypeError as exc:
+        raise HTTPException(status_code=400, detail="Payload is not JSON serializable") from exc
+
+    return {"status": "ok"}
 
 @app.get("/models")
 async def get_models():
