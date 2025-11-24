@@ -1,0 +1,14 @@
+{
+  "queries": [
+    {
+      "parts": ["part_0", "part_1"],
+      "question": "Определи стороны сделки и о чем они договорились и на какую сумму и с каким НДС",
+      "answer": ["buyer", "seller", "review", "sum", "vat"]
+    },
+    {
+      "parts": ["part_0"],
+      "question": "Кто ответственный от покупателя?",
+      "answer": ["responsible"]
+    }
+  ]
+}

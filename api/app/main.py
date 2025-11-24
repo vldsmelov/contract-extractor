@@ -13,6 +13,7 @@ from .services.extractor.pipeline import ExtractionPipeline
 from .services.warnings import to_payload
 from .services.utils import read_text_and_sections_from_upload, read_text_from_upload
 from .services.ollama_client import OllamaServiceError
+from .services.qa import SectionQuestionAnswering
 
 APP_DIR = Path(__file__).resolve().parent
 SCHEMA_PATH = APP_DIR / "assets" / "schema.json"
@@ -21,6 +22,9 @@ USER_TMPL_PATH = APP_DIR / "prompts" / "user_template.txt"
 FIELD_GUIDELINES_PATH = APP_DIR / "prompts" / "field_guidelines.md"
 SUMMARY_SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "summary_system.txt"
 SUMMARY_USER_TMPL_PATH = APP_DIR / "prompts" / "summary_user_template.txt"
+QA_SYSTEM_PROMPT_PATH = APP_DIR / "prompts" / "qa_system.txt"
+QA_USER_TMPL_PATH = APP_DIR / "prompts" / "qa_user_template.txt"
+QA_PLANS_DIR = APP_DIR / "assets" / "qa_plans"
 FIELD_PROMPTS_DIR = APP_DIR / "prompts" / "fields"
 FIELD_EXTRACTORS_PATH = APP_DIR / "assets" / "field_extractors.json"
 FIELD_CONTEXTS_PATH = APP_DIR / "assets" / "field_contexts.json"
@@ -34,6 +38,8 @@ USER_SYSTEM_PROMPT_PATH = USER_PROMPTS_DIR / "system.txt"
 USER_USER_TMPL_PATH = USER_PROMPTS_DIR / "user_template.txt"
 USER_SUMMARY_SYSTEM_PROMPT_PATH = USER_PROMPTS_DIR / "summary_system.txt"
 USER_SUMMARY_USER_TMPL_PATH = USER_PROMPTS_DIR / "summary_user_template.txt"
+USER_QA_SYSTEM_PROMPT_PATH = USER_PROMPTS_DIR / "qa_system.txt"
+USER_QA_USER_TMPL_PATH = USER_PROMPTS_DIR / "qa_user_template.txt"
 raw_schema = load_schema(str(SCHEMA_PATH))
 field_settings = FieldSettings(
     str(FIELD_EXTRACTORS_PATH),
@@ -49,6 +55,11 @@ pipeline = ExtractionPipeline(
     str(FIELD_GUIDELINES_PATH),
     str(SUMMARY_SYSTEM_PROMPT_PATH),
     str(SUMMARY_USER_TMPL_PATH),
+)
+qa_service = (
+    SectionQuestionAnswering(str(QA_SYSTEM_PROMPT_PATH), str(QA_USER_TMPL_PATH))
+    if CONFIG.use_llm
+    else None
 )
 app = FastAPI(title="Contract Extractor API", version=CONFIG.version)
 
@@ -158,6 +169,8 @@ async def get_prompts(q: str = "", f: Optional[List[str]] = Query(None)):
         "field_guidelines": FIELD_GUIDELINES_PATH,
         "summary_system": SUMMARY_SYSTEM_PROMPT_PATH,
         "summary_user_template": SUMMARY_USER_TMPL_PATH,
+        "qa_system": QA_SYSTEM_PROMPT_PATH,
+        "qa_user_template": QA_USER_TMPL_PATH,
         "system": SYSTEM_PROMPT_PATH,
         "user_template": USER_TMPL_PATH,
     }
@@ -166,6 +179,8 @@ async def get_prompts(q: str = "", f: Optional[List[str]] = Query(None)):
         "field_guidelines": USER_FIELD_GUIDELINES_PATH,
         "summary_system": USER_SUMMARY_SYSTEM_PROMPT_PATH,
         "summary_user_template": USER_SUMMARY_USER_TMPL_PATH,
+        "qa_system": USER_QA_SYSTEM_PROMPT_PATH,
+        "qa_user_template": USER_QA_USER_TMPL_PATH,
         "system": USER_SYSTEM_PROMPT_PATH,
         "user_template": USER_USER_TMPL_PATH,
     }
@@ -195,6 +210,8 @@ async def change_prompts(payload: Dict[str, Any] = Body(...)):
         "field_guidelines": USER_FIELD_GUIDELINES_PATH,
         "summary_system": USER_SUMMARY_SYSTEM_PROMPT_PATH,
         "summary_user_template": USER_SUMMARY_USER_TMPL_PATH,
+        "qa_system": USER_QA_SYSTEM_PROMPT_PATH,
+        "qa_user_template": USER_QA_USER_TMPL_PATH,
         "system": USER_SYSTEM_PROMPT_PATH,
         "user_template": USER_USER_TMPL_PATH,
     }
@@ -245,3 +262,143 @@ async def check(
         return {f"part_{idx}": part for idx, part in enumerate(sections)}
 
     return await _process_text_payload(text)
+
+
+def _normalize_sections(payload: Dict[str, Any]) -> Dict[str, str]:
+    sections_input = payload.get("sections") or payload.get("parts")
+
+    if sections_input is None:
+        text = payload.get("text", "")
+        if isinstance(text, str) and text.strip():
+            return {"part_0": text}
+        raise HTTPException(status_code=400, detail="Provide 'sections' or non-empty 'text'")
+
+    if isinstance(sections_input, list):
+        return {
+            f"part_{idx}": section if isinstance(section, str) else ""
+            for idx, section in enumerate(sections_input)
+        }
+
+    if isinstance(sections_input, dict):
+        normalized = {}
+        for key, value in sections_input.items():
+            if not isinstance(key, str):
+                raise HTTPException(status_code=400, detail="Section keys must be strings")
+            normalized[key] = value if isinstance(value, str) else ""
+        return normalized
+
+    raise HTTPException(status_code=400, detail="'sections' must be an object or array")
+
+
+def _normalize_queries(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    queries = payload.get("queries") or payload.get("plan") or payload.get("questions")
+    if not queries or not isinstance(queries, list):
+        raise HTTPException(status_code=400, detail="Provide a non-empty 'queries' list")
+
+    normalized: List[Dict[str, Any]] = []
+    for item in queries:
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail="Each query must be an object")
+
+        parts = item.get("parts")
+        question = item.get("question")
+        answers = item.get("answer")
+
+        if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
+            raise HTTPException(status_code=400, detail="Query 'parts' must be a list of strings")
+        if not isinstance(question, str) or not question.strip():
+            raise HTTPException(status_code=400, detail="Query 'question' must be a non-empty string")
+        if not isinstance(answers, list) or not all(isinstance(a, str) for a in answers):
+            raise HTTPException(status_code=400, detail="Query 'answer' must be a list of strings")
+
+        normalized.append({"parts": parts, "question": question.strip(), "answer": answers})
+
+    return normalized
+
+
+def _load_qa_plan(plan_name: str) -> List[Dict[str, Any]]:
+    """Load a predefined QA plan stored inside the project assets.
+
+    The plan file must reside under ``assets/qa_plans`` and have a ``.json``
+    extension. The JSON content can either be a raw list of query objects or
+    an object with a ``queries`` key that contains that list.
+    """
+
+    safe_name = Path(plan_name).stem
+    plan_path = QA_PLANS_DIR / f"{safe_name}.json"
+
+    if not plan_path.exists():
+        raise HTTPException(status_code=404, detail=f"QA plan '{safe_name}' not found")
+
+    content = _load_json_file(plan_path)
+    plan_payload = {"queries": content} if isinstance(content, list) else content
+
+    if not isinstance(plan_payload, dict):
+        raise HTTPException(status_code=400, detail="QA plan must be an object or array of queries")
+
+    return _normalize_queries(plan_payload)
+
+
+async def _run_queries(
+    sections_map: Dict[str, str], queries: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    aggregated: Dict[str, Any] = {}
+    responses: List[Dict[str, Any]] = []
+
+    for query in queries:
+        missing_parts = [name for name in query["parts"] if name not in sections_map]
+        if missing_parts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sections not found for parts: {', '.join(sorted(set(missing_parts)))}",
+            )
+
+        combined_text = "\n\n".join(sections_map[name] for name in query["parts"])
+        result = await qa_service.ask(combined_text, query["question"], query["answer"])
+
+        responses.append({"question": query["question"], "parts": query["parts"], "result": result})
+        for key, value in result.items():
+            aggregated[key] = value
+
+    return {"ok": True, "result": aggregated, "responses": responses}
+
+
+@app.post("/qa")
+async def ask_questions(payload: Dict[str, Any] = Body(...)):
+    if qa_service is None:
+        raise HTTPException(status_code=503, detail="LLM features are disabled (USE_LLM=false)")
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload must be an object")
+
+    sections_map = _normalize_sections(payload)
+    queries = _normalize_queries(payload)
+
+    return await _run_queries(sections_map, queries)
+
+
+@app.post("/qa/docx")
+async def ask_questions_from_docx(
+    file: UploadFile = File(...), plan: str = Query("default")
+):
+    """Run a predefined QA plan against a DOCX file.
+
+    The endpoint splits the DOCX into ``part_0``, ``part_1``, ... sections,
+    loads the specified plan from ``assets/qa_plans/<plan>.json``, and returns
+    aggregated answers from the LLM.
+    """
+
+    if qa_service is None:
+        raise HTTPException(status_code=503, detail="LLM features are disabled (USE_LLM=false)")
+
+    if file is None:
+        raise HTTPException(status_code=400, detail="Provide a DOCX file")
+
+    text, sections = await read_text_and_sections_from_upload(file)
+    if sections is None:
+        sections = [text]
+
+    sections_map = {f"part_{idx}": section for idx, section in enumerate(sections)}
+    queries = _load_qa_plan(plan)
+
+    return await _run_queries(sections_map, queries)
