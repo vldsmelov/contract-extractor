@@ -1,6 +1,7 @@
 from io import BytesIO
 from fastapi import UploadFile
 import json
+import re
 
 from docx import Document
 
@@ -13,9 +14,15 @@ def _is_docx(file: UploadFile) -> bool:
     )
 
 
-def _is_heading_paragraph(paragraph) -> bool:
+def _is_heading_paragraph(paragraph, text: str) -> bool:
     style_name = (paragraph.style.name if paragraph.style else "").lower()
-    return "heading" in style_name or "\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043e\u043a" in style_name
+
+    if "heading" in style_name or "\u0437\u0430\u0433\u043e\u043b\u043e\u0432\u043e\u043a" in style_name:
+        return True
+
+    return bool(
+        re.match(r"^\d{1,3}\.\s(?!\d).+$", text)
+    )
 
 
 def _extract_sections_from_docx(content: bytes) -> list[str]:
@@ -28,7 +35,7 @@ def _extract_sections_from_docx(content: bytes) -> list[str]:
         if not text:
             continue
 
-        is_heading = _is_heading_paragraph(paragraph)
+        is_heading = _is_heading_paragraph(paragraph, text)
 
         if is_heading:
             if sections[-1]:
