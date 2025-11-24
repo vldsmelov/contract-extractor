@@ -11,7 +11,7 @@ from .core.schema import load_schema
 from .core.field_settings import FieldSettings
 from .services.extractor.pipeline import ExtractionPipeline
 from .services.warnings import to_payload
-from .services.utils import read_text_from_upload
+from .services.utils import read_text_and_sections_from_upload, read_text_from_upload
 from .services.ollama_client import OllamaServiceError
 
 APP_DIR = Path(__file__).resolve().parent
@@ -220,17 +220,28 @@ async def change_prompts(payload: Dict[str, Any] = Body(...)):
     return {"status": "ok"}
 
 @app.post("/check")
-async def check(file: UploadFile = File(None), payload: Optional[Dict[str, Any]] = Body(None)):
+async def check(
+    file: UploadFile = File(None),
+    payload: Optional[Dict[str, Any]] = Body(None),
+    test: int = Query(0),
+):
     # Accept either multipart file or JSON body {"text": "..."}
     if file is None and not payload:
         raise HTTPException(status_code=400, detail="Provide a text file or JSON body with {'text': '...'}")
 
+    sections = None
     if file is not None:
-        text = await read_text_from_upload(file)
+        text, sections = await read_text_and_sections_from_upload(file)
     else:
         text = payload.get("text", "") if isinstance(payload, dict) else ""
 
     if not text.strip():
         raise HTTPException(status_code=400, detail="Empty text")
+
+    if test:
+        if sections is None:
+            sections = [text]
+
+        return {f"part_{idx}": part for idx, part in enumerate(sections)}
 
     return await _process_text_payload(text)
