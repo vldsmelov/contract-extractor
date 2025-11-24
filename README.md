@@ -14,85 +14,38 @@ docker run --rm --network host -v ollama:/root/.ollama ollama/ollama:latest
 ```
 
 ## Контейнеры и образа
-- **`api`** — образ FastAPI-сервиса. Собирается в два этапа:
-  1. `api/dockerfile.base` формирует тяжёлый базовый слой на основе `python:3.11-slim` и устанавливает фреймворк, валидацию и вспомогательные утилиты.
-  2. `api/dockerfile` добавляет лёгкие зависимости и исходный код приложения.
-
-Такое разделение позволяет кэшировать тяжёлые зависимости и пересобирать только верхний слой при изменениях кода.
+- **`api`** — образ FastAPI-сервиса. Собирается напрямую из `python:3.11-slim` без CUDA/torch-слоёв и дополнительных базовых образов.
 
 ## Зависимости
-- `api/requirements-base.txt` — базовые и относительно «тяжёлые» пакеты (FastAPI, Uvicorn, Pydantic, JSON Schema, поддержка multipart). Их стоит менять редко.
-- `api/requirements.txt` — лёгкие или часто меняющиеся зависимости приложения (в данный момент — `httpx` для общения с Ollama).
+- `api/requirements.txt` — единый список зависимостей (FastAPI, Uvicorn, Pydantic, JSON Schema, поддержка multipart, `httpx`, `python-docx`).
 
 Если библиотека не используется в проекте, добавлять её не нужно — лишние пакеты только увеличивают образ.
 
 ## Сборка и запуск
-1. **(Опционально) Соберите базовый образ**. Делается редко — только при обновлении системных или тяжёлых Python-зависимостей.
+1. **Убедитесь, что Ollama запущена**. Проверьте `curl http://localhost:11434/api/tags` — ответ должен содержать список моделей. Если демона нет, поднимите его командой `ollama serve` или через Docker (см. выше).
+
+2. **Запустите сервис через Docker Compose**. Достаточно одной команды сборки и старта контейнера:
    ```bash
-   docker build -f api/dockerfile.base -t contract-extractor/api-base:cu130 ./api
+   docker compose up -d --build
    ```
+   После старта API будет доступно на `http://localhost:8085`, Ollama — на `http://localhost:11434`.
 
-2. **Убедитесь, что Ollama запущена**. Проверьте `curl http://localhost:11434/api/tags` — ответ должен содержать список моделей. Если демона нет, поднимите его командой `ollama serve` или через Docker (см. выше).
-
-3. **Запустите сервис через Docker Compose**. Укажите уже собранный базовый образ через переменную `API_BASE_IMAGE`, чтобы переиспользовать кэш. Compose-файл использует host-сеть, поэтому контейнер API получает доступ к Ollama по `http://localhost:11434`.
-   ```bash
-   API_BASE_IMAGE=contract-extractor/api-base:cu130 \
-   docker compose up --build
-   ```
-   После старта API будет доступно на `http://localhost:8080`, Ollama — на `http://localhost:11434`.
-
-4. **Изменение модели (опционально)**. Передайте другое имя модели через `MODEL=...` (например, `MODEL=llama3.1`). По умолчанию сервис запрашивает сжатую версию `krith/qwen2.5-32b-instruct:IQ4_XS`.
+3. **Изменение модели (опционально)**. Передайте другое имя модели через `MODEL=...` (например, `MODEL=llama3.1`). По умолчанию сервис запрашивает сжатую версию `krith/qwen2.5-32b-instruct:IQ4_XS`.
 
 ## Чистый старт Docker-среды
 Если нужно пересобрать всё с нуля или избавиться от возможных конфликтов кэша/контейнеров:
 ```bash
-# Остановить и удалить сервисы вместе с томами моделей
-API_BASE_IMAGE=contract-extractor/api-base:cu130 docker compose down --volumes --remove-orphans
-
-# Очистить кеш сборки Docker
+docker compose down --volumes --remove-orphans
 docker builder prune --all --force
-
-# Удалить собранные образы (если они есть)
-docker image rm contract-extractor/api:dev contract-extractor/api-base:cu130 || true
 ```
 После этого повторите шаги из раздела «Сборка и запуск».
 
 ## Добавление зависимостей
-1. Определите слой:
-   - Фреймворк и тяжёлые пакеты — в `api/requirements-base.txt` (потребуется пересборка базового образа).
-   - Прикладные или часто меняющиеся утилиты — в `api/requirements.txt`.
-2. Пересоберите нужный слой:
-   - Только верхний: `API_BASE_IMAGE=contract-extractor/api-base:cu130 docker compose build api`
-   - С обновлением базового слоя: `docker build -f api/dockerfile.base -t contract-extractor/api-base:cu130 ./api`
-3. Перезапустите сервис: `docker compose up -d api`
-
-## Как обновить Docker без полной пересборки
-Часто достаточно обновить только прикладной слой, не трогая тяжёлый базовый образ:
-
-1. Убедитесь, что локально собран и доступен базовый образ (см. переменную `API_BASE_IMAGE`).
-2. Обновите исходники или зависимости в верхнем слое.
-3. Пересоберите только сервис API, не трогая остальные контейнеры:
-   ```bash
-   API_BASE_IMAGE=contract-extractor/api-base:cu130 docker compose build api
-   ```
-   Команда переиспользует слои базового образа, поэтому пересобирается только лёгкая часть.
-4. Примените обновление без перезапуска Ollama и других сервисов:
-   ```bash
-   docker compose up -d --no-deps api
-   ```
-   Флаг `--no-deps` пропускает зависимые контейнеры и ускоряет раскатку изменений.
-
-Если нужно только обновить зависимости Python в верхнем слое, отредактируйте `api/requirements.txt`, запустите шаги 3–4 и убедитесь, что новое окружение собрано на основе кэша базового образа.
+После изменения `api/requirements.txt` выполните `docker compose up -d --build`.
 
 ## Эндпоинты API
 - `GET /healthz` — проверка живости.
-- `GET /status` — информация о текущей модели и режиме работы.
-- `GET /config` — активная конфигурация.
-- `GET /schema` — JSON Schema результата.
-- `GET /models` — список моделей Ollama.
-- `GET /version` — версия приложения.
 - `POST /check` — извлечение данных (принимает текст в `multipart/form-data` или JSON).
-- `POST /test` — сравнение результата с эталоном.
 
 ## Структура проекта
 ```
@@ -119,7 +72,6 @@ api/
         rules.py
         llm.py
         pipeline.py
-  requirements-base.txt
   requirements.txt
 Dockerfile
 docker-compose.yml
